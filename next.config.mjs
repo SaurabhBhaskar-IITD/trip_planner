@@ -6,10 +6,13 @@ const nextConfig = {
   // Keep it external to the server bundle so it runs as a normal Node dependency.
   serverExternalPackages: ["mongoose", "bcryptjs"],
   eslint: {
-    // Lint is run explicitly in CI via `npm run lint`; do not fail the build on it.
-    ignoreDuringBuilds: false,
+    // Linting runs as its own pipeline stage via `npm run lint` (ESLint CLI, flat
+    // config). We skip Next's build-time lint pass to avoid its flat-config plugin
+    // false positive — type-checking below still fails the build on real errors.
+    ignoreDuringBuilds: true,
   },
   typescript: {
+    // Type errors MUST fail the build.
     ignoreBuildErrors: false,
   },
 };
