@@ -73,6 +73,33 @@ export const PRICING_UNITS = [
 ] as const;
 export type PricingUnit = (typeof PRICING_UNITS)[number];
 
+/**
+ * The master-data entities that own season-scoped price rows. Used to dispatch a
+ * single shared pricing UI/repository across every module (no duplicated pricing
+ * code per module).
+ */
+export const PRICE_PARENT_KINDS = [
+  "accommodation",
+  "transportation",
+  "activity",
+  "meal",
+  "addon",
+] as const;
+export type PriceParentKind = (typeof PRICE_PARENT_KINDS)[number];
+
+/**
+ * Which pricing units make sense for each kind of catalogue item. Drives the
+ * dynamic pricing form (show only relevant units) — never hard-code these lists
+ * inside a component. `fixed`/`percentage` are add-on-style catch-alls.
+ */
+export const PRICING_UNITS_BY_KIND: Record<PriceParentKind, readonly PricingUnit[]> = {
+  accommodation: ["per_room_per_night", "per_person_per_night", "per_room", "per_night", "per_person"],
+  transportation: ["per_vehicle", "per_person", "per_day", "per_group", "fixed"],
+  activity: ["per_person", "per_group", "per_day", "fixed"],
+  meal: ["per_person_per_night", "per_person", "per_day"],
+  addon: ["fixed", "per_person", "per_night", "per_room_per_night", "per_day", "percentage"],
+};
+
 /** Category tag on each price line, used to group the internal breakdown. */
 export const COMPONENT_KINDS = [
   "accommodation",

@@ -18,18 +18,32 @@ interface FilterOption {
   label: string;
 }
 
+/** An additional URL-driven dropdown filter beyond the standard status one. */
+export interface ExtraFilter {
+  /** Query-string parameter this filter writes to (e.g. "category", "mode"). */
+  param: string;
+  /** Label for the "all" option, e.g. "All categories". */
+  allLabel: string;
+  options: FilterOption[];
+  widthClassName?: string;
+}
+
 /**
  * URL-driven search + status filter. State lives in the query string (not local
  * component state) so it survives navigation, is shareable, and drives the
  * server component's data fetch. Debounced to avoid a request per keystroke.
+ * `filters` renders extra dropdowns (category, mode, …) each bound to its own
+ * query param — same URL-driven contract, no duplicated bar per module.
  */
 export function SearchFilterBar({
   searchPlaceholder = "Search…",
   statusOptions,
+  filters,
   className,
 }: {
   searchPlaceholder?: string;
   statusOptions?: FilterOption[];
+  filters?: ExtraFilter[];
   className?: string;
 }) {
   const router = useRouter();
@@ -86,6 +100,34 @@ export function SearchFilterBar({
           </button>
         ) : null}
       </div>
+
+      {filters?.map((f) => {
+        const current = params.get(f.param) ?? "all";
+        return (
+          <Select
+            key={f.param}
+            value={current}
+            onValueChange={(v) =>
+              pushParams((p) => (v === "all" ? p.delete(f.param) : p.set(f.param, v)))
+            }
+          >
+            <SelectTrigger
+              className={cn("w-full sm:w-44", f.widthClassName)}
+              aria-label={f.allLabel}
+            >
+              <SelectValue placeholder={f.allLabel} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{f.allLabel}</SelectItem>
+              {f.options.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      })}
 
       {statusOptions ? (
         <Select

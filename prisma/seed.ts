@@ -31,12 +31,16 @@ async function main() {
   const password = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe#12345";
   const name = process.env.SEED_ADMIN_NAME ?? "Trip Le Admin";
   const passwordHash = await bcrypt.hash(password, 12);
+  // Reset passwordHash on every run too — otherwise an admin created by an earlier
+  // seed keeps its original password and the documented dev credentials stop
+  // working. Idempotent: the hash is recomputed from the same (default or env)
+  // password each time.
   const admin = await prisma.user.upsert({
     where: { email },
-    update: { name, role: "admin", active: true },
+    update: { name, role: "admin", active: true, passwordHash },
     create: { email, name, passwordHash, role: "admin", active: true },
   });
-  console.log(`✔ Admin user: ${admin.email}`);
+  console.log(`✔ Admin user: ${admin.email} (password reset to configured value)`);
 
   // --- Destinations (reusable) ------------------------------------------
   const destData = [
@@ -220,8 +224,12 @@ async function upsertTrip(input: {
 }
 
 async function seedCatalogueIfEmpty(destinations: Record<string, string>) {
+  // Each block is guarded by a count so reruns never duplicate. All records carry
+  // the [DEV SAMPLE] tag. Enough breadth (multiple hotels, occupancies, seasons,
+  // transport capacities, meals, add-ons, and priced supplier costs) to exercise
+  // every module and the future pricing engine.
   if ((await prisma.accommodation.count()) === 0) {
-    const hotel = await prisma.accommodation.create({
+    await prisma.accommodation.create({
       data: {
         name: "Hotel Snow Valley",
         destinationId: destinations["manali"]!,
@@ -235,10 +243,23 @@ async function seedCatalogueIfEmpty(destinations: Record<string, string>) {
               name: "Deluxe Room",
               occupancy: "double",
               category: "deluxe",
+              maxOccupancy: 3,
               prices: {
                 create: [
-                  { amountMinor: inr(4500), unit: "per_room_per_night", season: "peak" },
-                  { amountMinor: inr(3500), unit: "per_room_per_night", season: "off_peak" },
+                  {
+                    amountMinor: inr(4500),
+                    supplierCostMinor: inr(3200),
+                    unit: "per_room_per_night",
+                    season: "peak",
+                    validFrom: new Date("2026-12-01"),
+                    validUntil: new Date("2027-01-15"),
+                  },
+                  {
+                    amountMinor: inr(3500),
+                    supplierCostMinor: inr(2500),
+                    unit: "per_room_per_night",
+                    season: "off_peak",
+                  },
                 ],
               },
             },
@@ -246,83 +267,133 @@ async function seedCatalogueIfEmpty(destinations: Record<string, string>) {
               name: "Standard Room",
               occupancy: "triple",
               category: "standard",
-              prices: { create: [{ amountMinor: inr(3000), unit: "per_room_per_night" }] },
+              prices: {
+                create: [
+                  { amountMinor: inr(3000), supplierCostMinor: inr(2100), unit: "per_room_per_night", season: "all" },
+                ],
+              },
             },
           ],
         },
       },
     });
-    console.log(`✔ Accommodation: ${hotel.name} (+ room types & prices)`);
+    await prisma.accommodation.create({
+      data: {
+        name: "Hotel Mountain View",
+        destinationId: destinations["shimla"]!,
+        category: "premium",
+        starRating: 4,
+        description: DEV,
+        amenities: ["WiFi", "Spa", "Restaurant", "Bar"],
+        roomTypes: {
+          create: [
+            {
+              name: "Premium Room",
+              occupancy: "double",
+              category: "premium",
+              prices: {
+                create: [
+                  { amountMinor: inr(6500), supplierCostMinor: inr(4800), unit: "per_room_per_night", season: "peak" },
+                  { amountMinor: inr(5000), supplierCostMinor: inr(3600), unit: "per_room_per_night", season: "shoulder" },
+                ],
+              },
+            },
+            {
+              name: "Family Suite",
+              occupancy: "quad",
+              category: "suite",
+              maxOccupancy: 5,
+              prices: {
+                create: [
+                  { amountMinor: inr(9000), supplierCostMinor: inr(6800), unit: "per_room_per_night", season: "all", minPax: 3, maxPax: 5 },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    });
+    console.log("✔ 2 accommodations (+ room types, occupancies, seasonal prices)");
   }
 
   if ((await prisma.transportation.count()) === 0) {
     await prisma.transportation.create({
-      data: {
-        name: "Tempo Traveller (12-seater)",
-        mode: "tempo_traveller",
-        capacity: 12,
-        routeFrom: "Manali",
-        routeTo: "Kasol",
-        prices: { create: [{ amountMinor: inr(8000), unit: "per_vehicle" }] },
-      },
+      data: { name: "Private Sedan (Dzire)", mode: "private_sedan", vehicleType: "Dzire", capacity: 4, routeFrom: "Delhi", routeTo: "Shimla",
+        prices: { create: [{ amountMinor: inr(9000), supplierCostMinor: inr(7000), unit: "per_vehicle" }] } },
     });
     await prisma.transportation.create({
-      data: {
-        name: "Volvo Bus",
-        mode: "bus",
-        capacity: 40,
-        routeFrom: "Delhi",
-        routeTo: "Kasol",
-        prices: { create: [{ amountMinor: inr(1200), unit: "per_person" }] },
-      },
+      data: { name: "Private SUV (Innova)", mode: "suv", vehicleType: "Innova Crysta", capacity: 6, routeFrom: "Delhi", routeTo: "Manali",
+        prices: { create: [{ amountMinor: inr(12000), supplierCostMinor: inr(9500), unit: "per_vehicle" }] } },
     });
-    console.log("✔ Transport options (+ prices)");
+    await prisma.transportation.create({
+      data: { name: "Tempo Traveller (12-seater)", mode: "tempo_traveller", capacity: 12, routeFrom: "Manali", routeTo: "Kasol",
+        prices: { create: [{ amountMinor: inr(8000), supplierCostMinor: inr(6000), unit: "per_vehicle" }] } },
+    });
+    await prisma.transportation.create({
+      data: { name: "Volvo Bus", mode: "bus", capacity: 40, routeFrom: "Delhi", routeTo: "Kasol",
+        prices: { create: [{ amountMinor: inr(1200), supplierCostMinor: inr(850), unit: "per_person" }] } },
+    });
+    await prisma.transportation.create({
+      data: { name: "Kalka–Shimla Toy Train", mode: "train", capacity: 100, routeFrom: "Kalka", routeTo: "Shimla",
+        prices: { create: [{ amountMinor: inr(1200), unit: "per_person" }] } },
+    });
+    await prisma.transportation.create({
+      data: { name: "Airport Transfer (Sedan)", mode: "airport_transfer", vehicleType: "Sedan", capacity: 4, routeFrom: "Delhi Airport", routeTo: "Hotel",
+        prices: { create: [{ amountMinor: inr(2500), supplierCostMinor: inr(1800), unit: "per_vehicle" }] } },
+    });
+    console.log("✔ Transport options across modes/capacities (+ prices)");
   }
 
   if ((await prisma.activity.count()) === 0) {
     await prisma.activity.create({
-      data: {
-        name: "Paragliding (Solang)",
-        type: "adventure",
-        destinationId: destinations["manali"]!,
-        description: DEV,
-        durationMinutes: 30,
-        prices: { create: [{ amountMinor: inr(1800), unit: "per_person" }] },
-      },
+      data: { name: "Paragliding (Solang)", type: "adventure", destinationId: destinations["manali"]!, description: DEV, durationMinutes: 30,
+        prices: { create: [{ amountMinor: inr(1800), supplierCostMinor: inr(1200), unit: "per_person" }] } },
     });
     await prisma.activity.create({
-      data: {
-        name: "Kheerganga Guided Trek",
-        type: "excursion",
-        destinationId: destinations["kasol"]!,
-        description: DEV,
-        prices: { create: [{ amountMinor: inr(1500), unit: "per_person" }] },
-      },
+      data: { name: "Kheerganga Guided Trek", type: "excursion", destinationId: destinations["kasol"]!, description: DEV, durationMinutes: 480,
+        prices: { create: [{ amountMinor: inr(1500), supplierCostMinor: inr(1000), unit: "per_person" }] } },
     });
-    console.log("✔ Activities (+ prices)");
+    await prisma.activity.create({
+      data: { name: "Shimla City Tour", type: "sightseeing", destinationId: destinations["shimla"]!, description: DEV, durationMinutes: 240,
+        prices: { create: [{ amountMinor: inr(3500), supplierCostMinor: inr(2500), unit: "per_group" }] } },
+    });
+    console.log("✔ Activities across types (+ prices)");
   }
 
   if ((await prisma.meal.count()) === 0) {
     await prisma.meal.create({
-      data: {
-        name: "MAP Plan (Breakfast + Dinner)",
-        mealType: "dinner",
-        plan: "MAP",
-        prices: { create: [{ amountMinor: inr(700), unit: "per_person_per_night" }] },
-      },
+      data: { name: "CP Plan (Breakfast only)", mealType: "breakfast", plan: "CP",
+        prices: { create: [{ amountMinor: inr(300), unit: "per_person_per_night" }] } },
     });
-    console.log("✔ Meals (+ prices)");
+    await prisma.meal.create({
+      data: { name: "MAP Plan (Breakfast + Dinner)", mealType: "dinner", plan: "MAP",
+        prices: { create: [{ amountMinor: inr(700), supplierCostMinor: inr(480), unit: "per_person_per_night" }] } },
+    });
+    await prisma.meal.create({
+      data: { name: "AP Plan (All meals)", mealType: "lunch", plan: "AP",
+        prices: { create: [{ amountMinor: inr(1100), supplierCostMinor: inr(780), unit: "per_person_per_night" }] } },
+    });
+    console.log("✔ Meal plans (CP / MAP / AP) (+ prices)");
   }
 
   if ((await prisma.addon.count()) === 0) {
     await prisma.addon.create({
-      data: {
-        name: "Airport Transfer",
-        description: DEV,
-        prices: { create: [{ amountMinor: inr(2500), unit: "fixed" }] },
-      },
+      data: { name: "Airport Transfer", description: DEV,
+        prices: { create: [{ amountMinor: inr(2500), supplierCostMinor: inr(1800), unit: "fixed" }] } },
     });
-    console.log("✔ Add-ons (+ prices)");
+    await prisma.addon.create({
+      data: { name: "Extra Night", description: DEV,
+        prices: { create: [{ amountMinor: inr(3500), unit: "per_room_per_night" }] } },
+    });
+    await prisma.addon.create({
+      data: { name: "Local Guide", description: DEV,
+        prices: { create: [{ amountMinor: inr(2000), supplierCostMinor: inr(1400), unit: "per_day" }] } },
+    });
+    await prisma.addon.create({
+      data: { name: "Travel Insurance", description: DEV,
+        prices: { create: [{ amountMinor: inr(499), unit: "per_person" }] } },
+    });
+    console.log("✔ Add-ons (transfer, extra night, guide, insurance) (+ prices)");
   }
 }
 

@@ -39,6 +39,27 @@ export function formatPercent(value: number, fractionDigits = 1): string {
   return `${value.toFixed(fractionDigits)}%`;
 }
 
+/**
+ * Short, human suffix for a pricing unit, e.g. "per_room_per_night" -> "room / night".
+ * Presentation only — the canonical vocabulary lives in domain/shared/enums.
+ */
+const PRICING_UNIT_LABELS: Record<string, string> = {
+  per_person: "person",
+  per_room: "room",
+  per_night: "night",
+  per_room_per_night: "room / night",
+  per_person_per_night: "person / night",
+  per_vehicle: "vehicle",
+  per_day: "day",
+  per_group: "group",
+  fixed: "fixed",
+  percentage: "%",
+};
+
+export function pricingUnitLabel(unit: string): string {
+  return PRICING_UNIT_LABELS[unit] ?? unit.replace(/_/g, " ");
+}
+
 /** "TL-2026-000123" style human reference from a numeric sequence. */
 export function formatQuoteReference(sequence: number, year = new Date().getFullYear()): string {
   return `TL-${year}-${String(sequence).padStart(6, "0")}`;
