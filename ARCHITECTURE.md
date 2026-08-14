@@ -11,7 +11,7 @@ future phase.
 Trip Le Planner uses a **layered / ports-and-adapters** architecture. The single most important rule:
 
 > **The domain layer (`src/domain`) is pure TypeScript.** It imports nothing from Next.js, React, or
-> Mongoose. All business truth — pricing and itinerary generation — lives here and is reusable from
+> Prisma. All business truth — pricing and itinerary generation — lives here and is reusable from
 > any caller.
 
 ```
@@ -28,8 +28,8 @@ Trip Le Planner uses a **layered / ports-and-adapters** architecture. The single
 │                   Entities · Money value object · Rule          │  ← framework-free, unit-tested
 │                   contracts                                     │
 ├──────────────────────────────────────────────────────────────┤
-│ Infrastructure    Mongoose models · DB connection · Auth        │  src/server/db, src/server/auth
-│                   provider (adapters that satisfy ports)        │
+│ Infrastructure    Prisma client · repositories · Auth provider  │  src/server/db, /repositories, /auth
+│                   (adapters that satisfy the domain-facing ports)│
 ├──────────────────────────────────────────────────────────────┤
 │ Shared            Zod schemas · Typed errors · Utils · Config   │  src/lib, src/config, src/types
 └──────────────────────────────────────────────────────────────┘
@@ -43,30 +43,37 @@ same pricing/itinerary code later.
 
 - The pricing engine can be unit-tested in milliseconds with no database or browser.
 - The same computation runs identically in the planner UI, a CRM background job, or a public API.
-- Swapping MongoDB for another store is an infrastructure change, not a rewrite.
+- The persistence store (PostgreSQL today) can be swapped as an infrastructure change, not a rewrite.
+  This migration from MongoDB to Neon PostgreSQL touched only infrastructure — the domain and its
+  tests were unchanged.
 
 ---
 
 ## 2. Domain entities
 
-All entities are defined as pure types in `src/domain/entities` and persisted via Mongoose models in
-`src/server/db/models`. Canonical vocabularies (room types, transport modes, pricing units, …) live in
-`src/domain/shared/enums.ts` and are shared by types, schemas, validators, and UI — **never** hard-coded
-in components.
+Domain entities are pure types in `src/domain/entities`; they are persisted through the relational
+**Prisma schema** (`prisma/schema.prisma`) and accessed via repositories in `src/server/repositories`.
+Canonical vocabularies (room types, transport modes, pricing units, …) live in
+`src/domain/shared/enums.ts` **and** are mirrored as PostgreSQL enums in the Prisma schema — shared by
+types, validators, and UI, **never** hard-coded in components.
 
-| Entity              | Purpose                                                                 |
-| ------------------- | ----------------------------------------------------------------------- |
-| **User**            | Internal Trip Le employee, with a `Role`.                               |
-| **Customer**        | The party a quote is for, plus embedded `Traveller`s.                   |
-| **Destination**     | A place included in trips.                                              |
-| **Trip**            | A reusable tour product with an embedded structured **itinerary**.      |
-| **Accommodation**   | Property with `roomOptions` (room type × category × price).             |
-| **Transportation**  | Mode + **capacity** + price (per vehicle / per person / …).             |
-| **Activity**        | Sightseeing, adventure, tickets, guides, excursions (per-person price). |
-| **Meal**            | Meal type + plan (EP/CP/MAP/AP/custom) + price.                         |
-| **Addon**           | Optional extra service.                                                 |
-| **PricingRule**     | Declarative condition→effect rule (evaluated by the engine in Phase 3). |
-| **Quote**           | Versioned proposal with **embedded price snapshots** (see §6).          |
+| Table (Prisma model)                       | Purpose                                                            |
+| ------------------------------------------ | ----------------------------------------------------------------- |
+| **User**                                   | Internal Trip Le employee, with a `Role`.                         |
+| **Customer**                               | The party a quote is for.                                         |
+| **Destination**                            | Reusable place; many-to-many with Trip via `TripDestination`.    |
+| **Trip**                                   | Reusable tour product (`slug`, `status`, `version`).             |
+| **ItineraryDay → ItinerarySegment**        | Relational, explicitly ordered day-by-day structure.             |
+| **Accommodation → RoomType → AccommodationPrice** | Property → occupancy/category room → season/validity prices. |
+| **Transportation → TransportationPrice**   | Mode + structured `capacity` + price rows.                       |
+| **Activity → ActivityPrice**               | Activities with per-person/group/fixed price rows.               |
+| **Meal → MealPrice**                       | Meal type + plan (EP/CP/MAP/AP/custom) + price rows.             |
+| **Addon → AddonPrice**                     | Optional services + price rows.                                  |
+| **PricingRule**                            | Enum-typed effect + validated JSON conditions/params (Phase 3).  |
+| **Quote → QuoteVersion → QuoteItem**       | Versioned proposal with **frozen price snapshots** (see §6).     |
+
+Every price table carries the relational `PriceSpec` fields: `amountMinor` (BigInt),
+`supplierCostMinor` (internal), `unit`, `season`, `validFrom/validUntil`, `minPax/maxPax`, `active`.
 
 ### Pricing metadata (`PriceSpec`)
 
@@ -83,8 +90,8 @@ Pricing **units** are modeled explicitly: `per_person`, `per_room`, `per_night`,
 ### Read (e.g. viewing a page)
 
 ```
-Browser → Next route (RSC) → guardPage(permission) → repository/service
-        → Mongoose model → Mongo → domain-shaped data → DTO (internal fields
+Browser → Next route (RSC) → guardPage(permission) → repository (port)
+        → Prisma adapter → PostgreSQL → domain-shaped data → DTO (internal fields
           stripped unless authorized) → rendered on the server
 ```
 
@@ -155,13 +162,16 @@ fact**. This boundary is architectural, not a guideline.
 
 Per spec §4, previously generated quotes must never change when master data changes.
 
-- A `Quote` holds `versions: QuoteVersion[]`. Each version embeds:
-  - `selections` (what the operator chose),
-  - `items: QuoteItemSnapshot[]` — each with the **frozen `unitPrice`, `lineTotal`, and internal
-    margin** used at creation,
-  - `totals` — frozen commercial totals,
+- A `Quote` has many `QuoteVersion` rows. Each version stores:
+  - `selectionsSnapshot` (what the operator chose, as JSON),
+  - many `QuoteItem` rows — each a full snapshot: `componentNameSnapshot`, `descriptionSnapshot`,
+    `quantity`, `unit`, **frozen `unitPriceMinor` / `lineTotalMinor`**, internal
+    `supplierCostMinor` / `marginMinor`, and `pricingMetadataSnapshot` (JSON),
+  - frozen commercial totals (`subtotalMinor`, `grandTotalMinor`, internal margin fields),
   - `pricingEngineVersion`.
-- Editing a quote **appends a new version**; it never mutates a previous one.
+- `QuoteItem.componentId` is a **nullable soft reference with no FK** — editing or deleting the
+  master accommodation/activity later cannot alter or break a historical line.
+- Editing a quote **inserts a new version**; existing versions are immutable.
 - Result: master price ₹3,500 → ₹4,000 later leaves the original quote showing ₹3,500, with a full
   price-change trail across versions.
 
@@ -212,9 +222,11 @@ The CRM is a **separate application** and must not be coupled to planner interna
 
 | Decision                              | Rationale                                                        |
 | ------------------------------------- | ---------------------------------------------------------------- |
-| Money as integer minor units          | Eliminates float rounding errors in prices/margins.              |
+| Money as integer minor units (BigInt) | Eliminates float rounding errors; `Money` VO converts at the boundary. |
 | Pure domain layer (no framework deps) | Reuse across planner/CRM/website/mobile; fast unit tests.        |
-| Embedded quote snapshots + versions   | Historical accuracy; immune to master-data changes.             |
+| Relational quote snapshots + versions | Historical accuracy; immune to master-data changes.             |
+| Prisma + Neon PostgreSQL              | Relational integrity, one Neon project, env-selected DB/branch.  |
+| ORM isolated behind repository ports  | Domain never imports Prisma; store is swappable (see §1).        |
 | Permission matrix (not role checks)   | New roles are data, not scattered code changes.                  |
 | Auth.js (NextAuth v5) + JWT           | Standard, SSO-ready; split edge/node config for middleware.      |
 | Deterministic engines; AI presenter-only | Commercial correctness; AI never invents facts or prices.    |

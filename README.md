@@ -27,7 +27,8 @@ website, and a mobile app.
 | Language           | TypeScript (strict, `noUncheckedIndexedAccess`)    |
 | Styling            | Tailwind CSS v3.4 + design tokens                  |
 | UI primitives      | shadcn/ui pattern (Radix UI, hand-added)           |
-| Database           | MongoDB via Mongoose 8                              |
+| Database           | Neon PostgreSQL                                     |
+| ORM                | Prisma 6                                           |
 | Validation         | Zod                                                |
 | Auth               | Auth.js (NextAuth v5) — credentials + JWT sessions |
 | Passwords          | bcryptjs (work factor 12)                          |
@@ -58,15 +59,18 @@ src/
 │  ├─ pricing/               # deterministic pricing engine + rule contracts
 │  └─ itinerary/             # itinerary builder + presenter (template/AI-ready)
 ├─ server/                   # server-only infrastructure & application layer
-│  ├─ db/                    # mongoose connection + models
+│  ├─ db/                    # Prisma client singleton (server-only)
+│  ├─ repositories/          # ports/ (interfaces) + prisma/ (implementations)
 │  ├─ auth/                  # NextAuth config, RBAC, password, page guard
 │  └─ actions/              # server actions (thin; call domain/services)
 ├─ lib/                      # errors, validation (Zod), utils (cn, format)
 ├─ config/                   # validated env, roles/permissions, navigation
 └─ types/                    # cross-cutting types (next-auth augmentation)
+
+prisma/                      # schema.prisma (relational model) + seed.ts
 ```
 
-The **golden rule**: `src/domain` imports **nothing** from Next.js, React, or Mongoose. It is the
+The **golden rule**: `src/domain` imports **nothing** from Next.js, React, or Prisma. It is the
 reusable business core (pricing/itinerary) that the planner UI, CRM, website, and mobile app can all
 call. Dependencies point **downward** (UI → application → domain ← infrastructure).
 
@@ -77,18 +81,21 @@ call. Dependencies point **downward** (UI → application → domain ← infrast
 Copy the example env file and fill in values:
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
+
+> Use `.env` (not `.env.local`): the Next.js app reads both, but the **Prisma CLI
+> only reads `.env`**, so keeping everything in `.env` lets one file serve the app,
+> migrations, and seeding. Both are git-ignored.
 
 | Variable              | Required          | Purpose                                             |
 | --------------------- | ----------------- | --------------------------------------------------- |
-| `MONGODB_URI`         | for data features | MongoDB connection string                           |
-| `MONGODB_DB_NAME`     | optional          | Logical DB name (default `trip_le_planner`)         |
+| `DATABASE_URL`        | for data features | Neon PostgreSQL connection string                   |
 | `AUTH_SECRET`         | **production**    | Signs session JWTs — `npx auth secret` to generate  |
 | `NEXT_PUBLIC_APP_URL` | optional          | Public base URL (default `http://localhost:3000`)   |
 
 The app **boots and renders without a database** — data-backed pages show an honest "not connected"
-state instead of crashing. `MONGODB_URI` is only needed for sign-in and (future) data features.
+state instead of crashing. `DATABASE_URL` is only needed for sign-in and (future) data features.
 
 ---
 
@@ -100,43 +107,60 @@ npm run dev
 ```
 
 Open http://localhost:3000. Without a database configured you can view the UI shell and the login
-page; sign-in requires MongoDB + a seeded user.
+page; sign-in requires PostgreSQL + a seeded user.
 
 ### Useful scripts
 
-| Script              | Purpose                                        |
-| ------------------- | ---------------------------------------------- |
-| `npm run dev`       | Start the dev server                           |
-| `npm run build`     | Production build (type-checks; fails on errors)|
-| `npm run start`     | Run the production build                       |
-| `npm run lint`      | ESLint (flat config)                           |
-| `npm run typecheck` | `tsc --noEmit`                                 |
-| `npm run test`      | Vitest domain unit tests                       |
-| `npm run seed`      | Seed an initial admin user (needs DB)          |
+| Script                | Purpose                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| `npm run dev`         | Start the dev server                                       |
+| `npm run build`       | Production build (type-checks; fails on errors)            |
+| `npm run start`       | Run the production build                                   |
+| `npm run lint`        | ESLint (flat config)                                       |
+| `npm run typecheck`   | `tsc --noEmit`                                             |
+| `npm run test`        | Vitest domain unit tests (database-independent)            |
+| `npm run db:generate` | Generate the Prisma client (also runs on `postinstall`)    |
+| `npm run db:push`     | Push the schema to the database (no migration history)     |
+| `npm run db:migrate`  | Create/apply a dev migration                               |
+| `npm run db:studio`   | Open Prisma Studio                                         |
+| `npm run seed`        | Seed an initial admin user + sample destinations (needs DB)|
 
 ---
 
-## Database setup
+## Database setup (Neon PostgreSQL + Prisma)
 
-1. Provision MongoDB (Atlas or local) and set `MONGODB_URI` in `.env.local`.
-2. Seed an admin user so you can sign in:
+Trip Le Planner uses a **dedicated PostgreSQL database inside your existing Neon project**
+(separate from the other Trip Le app database). The specific database/branch is selected entirely
+by `DATABASE_URL`, so dev/staging/prod simply point at different Neon branches.
 
-```bash
-npm run seed -- "admin@trip-le.com" "YourStrongPassword#123" "Admin Name"
-```
+1. In the Neon console, create (or pick) a branch/database for the planner and copy its **pooled**
+   connection string into `DATABASE_URL` in `.env`.
+2. Create the tables from the Prisma schema:
 
-3. Start the app and sign in with those credentials.
+   ```bash
+   npm run db:push
+   ```
 
-The seed script (`scripts/seed.mjs`) is dependency-light (mongoose + bcryptjs) and idempotent
-(upserts by email).
+   (or `npm run db:migrate` if you want a tracked migration history).
+3. Seed an admin user (credentials overridable via `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` /
+   `SEED_ADMIN_NAME`):
+
+   ```bash
+   npm run seed
+   ```
+
+4. Start the app and sign in.
+
+The seed (`prisma/seed.ts`) is idempotent (upserts by email/slug), creates **no fake production
+pricing**, and clearly labels its sample destinations as dev data.
 
 ---
 
 ## Authentication architecture
 
 - **Sessions**: JWT strategy via Auth.js (NextAuth v5), stored in an httpOnly cookie.
-- **Credentials**: verified against MongoDB users; passwords are bcrypt-hashed and never selected by
-  default or returned to the client.
+- **Credentials**: verified against PostgreSQL users via the `UserRepository`; passwords are
+  bcrypt-hashed and the hash is never returned to the client.
 - **Two-layer enforcement** (defence in depth):
   1. **Edge middleware** (`middleware.ts`) guards route groups using an edge-safe config
      (`server/auth/auth.config.ts` — no DB/bcrypt imports).
@@ -169,17 +193,21 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full detail.
 
 ## Historical accuracy (why old quotes never change)
 
-A quote does **not** reference live master prices. When created, it **embeds a snapshot** of every
-selected component with the price frozen at that moment, and each edit appends a new version. If a
-hotel's master price later changes ₹3,500 → ₹4,000, the existing quote still shows ₹3,500.
+A quote does **not** reference live master prices. When created, each `QuoteVersion` stores a **frozen
+snapshot** (`QuoteItem` rows) of every selected component with the price captured at that moment, and
+each edit inserts a new version. Master references are nullable with no FK, so editing/deleting master
+data can't alter history. If a hotel's master price later changes ₹3,500 → ₹4,000, the existing quote
+still shows ₹3,500.
 
 ---
 
 ## Deployment considerations
 
 - Target host: `planner.trip-le.com` (separate from the existing Trip Le website and CRM).
-- Set `AUTH_SECRET`, `MONGODB_URI`, and `NEXT_PUBLIC_APP_URL` in the production environment.
+- Set `AUTH_SECRET`, `DATABASE_URL`, and `NEXT_PUBLIC_APP_URL` in the production environment.
   `AUTH_SECRET` is mandatory at production runtime.
+- Point `DATABASE_URL` at the **production Neon branch**; run `prisma migrate deploy` (or `db push`)
+  during release. `postinstall` regenerates the Prisma client on install.
 - `trustHost: true` is set for self-hosting behind a known host/reverse proxy.
 - Never commit `.env*`. Supplier cost / margin must never be exposed through any public API.
 - Health probe: `GET /api/health` (returns non-sensitive status only).
@@ -190,7 +218,7 @@ hotel's master price later changes ₹3,500 → ₹4,000, the existing quote sti
 
 | Phase   | Scope                                                                          |
 | ------- | ------------------------------------------------------------------------------ |
-| **1** ✅ | Foundation: architecture, engines (skeleton), models, auth, UI shell, routes  |
+| **1** ✅ | Foundation: architecture, engines (skeleton), Prisma/Postgres schema, auth, UI shell, routes |
 | 2       | Master-data CRUD (trips, accommodations, transport, activities, meals, add-ons)|
 | 3       | Full pricing rule engine, quote builder, snapshotting, internal breakdown      |
 | 4       | Itinerary generation + customer-facing quote/itinerary output                  |

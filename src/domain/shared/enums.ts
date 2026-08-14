@@ -3,7 +3,7 @@
  *
  * These are the vocabulary of the business. They live in the pure domain layer
  * (no framework imports) so the same definitions are shared by the engine, the
- * Mongoose schemas, the Zod validators and the UI. NEVER hard-code these lists
+ * Prisma schema/enums, the Zod validators and the UI. NEVER hard-code these lists
  * inside a React component — import from here.
  */
 

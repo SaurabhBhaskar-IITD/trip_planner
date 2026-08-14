@@ -8,18 +8,26 @@ import { z } from "zod";
  * malformed, so we never ship a half-configured server.
  *
  * Design notes:
- * - MONGODB_URI is optional so the app can boot and render the UI shell without
- *   a database (Phase 1 requirement). Data-backed code paths must guard against
- *   `env.MONGODB_URI` being undefined and surface an honest "unconfigured" state
- *   rather than crashing.
+ * - DATABASE_URL is optional so the app can boot and render the UI shell without
+ *   a database. Data-backed code paths must guard against `env.DATABASE_URL`
+ *   being undefined (via `isDatabaseConfigured`) and surface an honest
+ *   "unconfigured" state rather than crashing.
  * - Only variables prefixed `NEXT_PUBLIC_` are safe to reference from client
  *   components. Everything else is server-only and must never be imported into
  *   client code.
  */
 
 const serverSchema = z.object({
-  MONGODB_URI: z.string().url().optional(),
-  MONGODB_DB_NAME: z.string().min(1).default("trip_le_planner"),
+  // Neon PostgreSQL connection string. Optional so the app can boot and render
+  // the UI shell without a database; data code paths guard on isDatabaseConfigured.
+  // The database/branch is chosen entirely via this URL (dev/staging/prod).
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine((v) => v.startsWith("postgres://") || v.startsWith("postgresql://"), {
+      message: "DATABASE_URL must be a PostgreSQL connection string",
+    })
+    .optional(),
   AUTH_SECRET: z
     .string()
     .min(1, "AUTH_SECRET is required to sign session tokens")
@@ -65,7 +73,7 @@ export const env = {
   /** Convenience flag used across the app. */
   isProduction,
   /** True when a database connection string is configured. */
-  isDatabaseConfigured: Boolean(parsedServer.data.MONGODB_URI),
+  isDatabaseConfigured: Boolean(parsedServer.data.DATABASE_URL),
 } as const;
 
 export type Env = typeof env;

@@ -1,0 +1,648 @@
+// Trip Le Planner — PostgreSQL schema (Neon)
+//
+// Persistence lives in the INFRASTRUCTURE layer only. The pure domain layer
+// (src/domain) never imports Prisma; repositories map between these rows and
+// domain types/value objects.
+//
+// Conventions:
+//  - IDs are cuid() strings (fits the domain's `EntityId = string`).
+//  - All monetary values are stored as BigInt MINOR UNITS (paise). Never floats.
+//    The domain `Money` value object remains the authoritative abstraction;
+//    repositories convert BigInt<->number at the boundary.
+//  - Master data (trips, accommodations, …) is the SOURCE of prices. Quotes never
+//    reference live prices — each QuoteVersion freezes a snapshot (see below).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Neon connection string. The specific database/branch is chosen entirely via
+  // env (dev/staging/prod point DATABASE_URL at different Neon branches).
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums — mirror src/domain/shared/enums.ts (single source of business vocabulary)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  admin
+  manager
+  sales
+  operations
+}
+
+enum TripStatus {
+  draft
+  active
+  archived
+}
+
+enum AccommodationCategory {
+  standard
+  deluxe
+  premium
+  suite
+}
+
+enum RoomOccupancy {
+  single
+  double
+  triple
+  quad
+  six_sharing
+}
+
+enum TransportMode {
+  flight
+  train
+  private_sedan
+  suv
+  tempo_traveller
+  bus
+  shared_taxi
+  local_transport
+  airport_transfer
+  railway_transfer
+}
+
+enum ActivityType {
+  sightseeing
+  adventure
+  entry_ticket
+  local_experience
+  guide
+  excursion
+}
+
+enum MealType {
+  breakfast
+  lunch
+  dinner
+}
+
+enum MealPlan {
+  EP
+  CP
+  MAP
+  AP
+  custom
+}
+
+enum PricingUnit {
+  per_person
+  per_room
+  per_night
+  per_room_per_night
+  per_person_per_night
+  per_vehicle
+  per_day
+  per_group
+  fixed
+  percentage
+}
+
+enum Season {
+  peak
+  shoulder
+  off_peak
+  all
+}
+
+enum ComponentKind {
+  accommodation
+  transport
+  activity
+  meal
+  transfer
+  addon
+  custom
+  discount
+  tax
+}
+
+enum SegmentType {
+  transfer
+  accommodation
+  meal
+  activity
+  sightseeing
+  free_time
+  note
+}
+
+enum RuleEffectType {
+  add_fixed
+  add_per_person
+  add_per_person_per_night
+  discount_percentage
+  surcharge_percentage
+  replace_component
+}
+
+enum QuoteStatus {
+  draft
+  sent
+  awaiting_response
+  confirmed
+  cancelled
+  expired
+}
+
+// ---------------------------------------------------------------------------
+// Identity & people
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(sales)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdQuotes        Quote[]        @relation("QuoteCreatedBy")
+  createdQuoteVersions QuoteVersion[] @relation("QuoteVersionCreatedBy")
+
+  @@index([role])
+  @@map("users")
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  city      String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotes Quote[]
+
+  @@index([email])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Destinations & trips (many-to-many via ordered join table)
+// ---------------------------------------------------------------------------
+
+model Destination {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  region      String?
+  country     String   @default("India")
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trips          TripDestination[]
+  accommodations Accommodation[]
+  activities     Activity[]
+  daysFrom       ItineraryDay[]    @relation("DayFromDestination")
+  daysTo         ItineraryDay[]    @relation("DayToDestination")
+
+  @@index([active])
+  @@map("destinations")
+}
+
+model Trip {
+  id             String     @id @default(cuid())
+  name           String
+  slug           String     @unique
+  summary        String?
+  description    String?
+  durationDays   Int
+  durationNights Int
+  status         TripStatus @default(draft)
+  // Optimistic/versioning marker for the trip PRODUCT definition (not quotes).
+  version        Int        @default(1)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  destinations TripDestination[]
+  itinerary    ItineraryDay[]
+  quotes       Quote[]
+
+  @@index([status])
+  @@map("trips")
+}
+
+// Ordered many-to-many join between Trip and Destination.
+model TripDestination {
+  tripId        String
+  destinationId String
+  sortOrder     Int    @default(0)
+
+  trip        Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  destination Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, destinationId])
+  @@index([destinationId])
+  @@map("trip_destinations")
+}
+
+// ---------------------------------------------------------------------------
+// Itinerary: Trip -> ItineraryDay -> ItinerarySegment (explicit ordering)
+// ---------------------------------------------------------------------------
+
+model ItineraryDay {
+  id                String   @id @default(cuid())
+  tripId            String
+  dayNumber         Int
+  title             String
+  summary           String?
+  fromDestinationId String?
+  toDestinationId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  trip            Trip               @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromDestination Destination?       @relation("DayFromDestination", fields: [fromDestinationId], references: [id])
+  toDestination   Destination?       @relation("DayToDestination", fields: [toDestinationId], references: [id])
+  segments        ItinerarySegment[]
+
+  @@unique([tripId, dayNumber])
+  @@map("itinerary_days")
+}
+
+model ItinerarySegment {
+  id             String         @id @default(cuid())
+  itineraryDayId String
+  // Explicit ordering within the day (Day 1: 1.Transfer 2.Check-in 3.Lunch ...).
+  sortOrder      Int
+  type           SegmentType
+  title          String
+  detail         String?
+  // Optional soft reference to a catalogue item (no FK: structural template only).
+  referenceId    String?
+  transportMode  TransportMode?
+  mealType       MealType?
+
+  day ItineraryDay @relation(fields: [itineraryDayId], references: [id], onDelete: Cascade)
+
+  @@index([itineraryDayId, sortOrder])
+  @@map("itinerary_segments")
+}
+
+// ---------------------------------------------------------------------------
+// Accommodation: Accommodation -> RoomType -> AccommodationPrice
+// ---------------------------------------------------------------------------
+
+model Accommodation {
+  id            String                @id @default(cuid())
+  name          String
+  destinationId String
+  category      AccommodationCategory
+  starRating    Int?
+  description   String?
+  amenities     String[]
+  active        Boolean               @default(true)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  destination Destination @relation(fields: [destinationId], references: [id])
+  roomTypes   RoomType[]
+
+  @@index([destinationId])
+  @@index([active])
+  @@map("accommodations")
+}
+
+model RoomType {
+  id              String                @id @default(cuid())
+  accommodationId String
+  name            String // e.g. "Deluxe Room"
+  occupancy       RoomOccupancy
+  category        AccommodationCategory
+  maxOccupancy    Int?
+  active          Boolean               @default(true)
+
+  accommodation Accommodation        @relation(fields: [accommodationId], references: [id], onDelete: Cascade)
+  prices        AccommodationPrice[]
+
+  @@index([accommodationId])
+  @@map("room_types")
+}
+
+// Season/validity-scoped price rows (one room type can have many).
+model AccommodationPrice {
+  id                String      @id @default(cuid())
+  roomTypeId        String
+  amountMinor       BigInt // selling price, minor units (paise)
+  currency          String      @default("INR")
+  unit              PricingUnit @default(per_room_per_night)
+  // INTERNAL — supplier cost, never exposed via public APIs.
+  supplierCostMinor BigInt?
+  season            Season?
+  validFrom         DateTime?
+  validUntil        DateTime?
+  minPax            Int?
+  maxPax            Int?
+  active            Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  roomType RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+
+  @@index([roomTypeId])
+  @@index([active, validFrom, validUntil])
+  @@map("accommodation_prices")
+}
+
+// ---------------------------------------------------------------------------
+// Transportation (+ season/validity price rows)
+// ---------------------------------------------------------------------------
+
+model Transportation {
+  id          String        @id @default(cuid())
+  name        String
+  mode        TransportMode
+  provider    String?
+  vehicleType String?
+  // Structured capacity data (Sedan=4, SUV=6, Tempo=12, Bus=40). NEVER hard-coded
+  // in components or pricing code — read from here.
+  capacity    Int
+  routeFrom   String?
+  routeTo     String?
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  prices TransportationPrice[]
+
+  @@index([mode])
+  @@index([active])
+  @@map("transportations")
+}
+
+model TransportationPrice {
+  id                String      @id @default(cuid())
+  transportationId  String
+  amountMinor       BigInt
+  currency          String      @default("INR")
+  unit              PricingUnit @default(per_vehicle)
+  supplierCostMinor BigInt?
+  season            Season?
+  validFrom         DateTime?
+  validUntil        DateTime?
+  active            Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  transportation Transportation @relation(fields: [transportationId], references: [id], onDelete: Cascade)
+
+  @@index([transportationId])
+  @@index([active, validFrom, validUntil])
+  @@map("transportation_prices")
+}
+
+// ---------------------------------------------------------------------------
+// Activities (+ price rows)
+// ---------------------------------------------------------------------------
+
+model Activity {
+  id              String       @id @default(cuid())
+  name            String
+  destinationId   String?
+  type            ActivityType
+  description     String?
+  durationMinutes Int?
+  active          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  destination Destination?    @relation(fields: [destinationId], references: [id])
+  prices      ActivityPrice[]
+
+  @@index([destinationId])
+  @@index([active])
+  @@map("activities")
+}
+
+model ActivityPrice {
+  id                String      @id @default(cuid())
+  activityId        String
+  amountMinor       BigInt
+  currency          String      @default("INR")
+  unit              PricingUnit @default(per_person)
+  supplierCostMinor BigInt?
+  season            Season?
+  validFrom         DateTime?
+  validUntil        DateTime?
+  active            Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([activityId])
+  @@index([active, validFrom, validUntil])
+  @@map("activity_prices")
+}
+
+// ---------------------------------------------------------------------------
+// Meals (+ price rows)
+// ---------------------------------------------------------------------------
+
+model Meal {
+  id        String   @id @default(cuid())
+  name      String
+  mealType  MealType
+  plan      MealPlan
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prices MealPrice[]
+
+  @@index([active])
+  @@map("meals")
+}
+
+model MealPrice {
+  id                String      @id @default(cuid())
+  mealId            String
+  amountMinor       BigInt
+  currency          String      @default("INR")
+  unit              PricingUnit @default(per_person_per_night)
+  supplierCostMinor BigInt?
+  season            Season?
+  validFrom         DateTime?
+  validUntil        DateTime?
+  active            Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  meal Meal @relation(fields: [mealId], references: [id], onDelete: Cascade)
+
+  @@index([mealId])
+  @@index([active, validFrom, validUntil])
+  @@map("meal_prices")
+}
+
+// ---------------------------------------------------------------------------
+// Add-ons (+ price rows)
+// ---------------------------------------------------------------------------
+
+model Addon {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  prices AddonPrice[]
+
+  @@index([active])
+  @@map("addons")
+}
+
+model AddonPrice {
+  id                String      @id @default(cuid())
+  addonId           String
+  amountMinor       BigInt
+  currency          String      @default("INR")
+  unit              PricingUnit @default(fixed)
+  supplierCostMinor BigInt?
+  season            Season?
+  validFrom         DateTime?
+  validUntil        DateTime?
+  active            Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  addon Addon @relation(fields: [addonId], references: [id], onDelete: Cascade)
+
+  @@index([addonId])
+  @@index([active, validFrom, validUntil])
+  @@map("addon_prices")
+}
+
+// ---------------------------------------------------------------------------
+// Pricing rules — STRUCTURED & deterministic. The effect TYPE is an app-controlled
+// enum; only the parameter/condition PORTIONS are JSON (validated by Zod at the
+// application boundary). No arbitrary SQL/expression execution.
+// ---------------------------------------------------------------------------
+
+model PricingRule {
+  id               String         @id @default(cuid())
+  name             String
+  description      String?
+  priority         Int            @default(100)
+  // Structured conditions, e.g. [{ field, operator, value }] — validated in app code.
+  conditions       Json           @default("[]")
+  effectType       RuleEffectType
+  // Structured effect parameters, e.g. { amountMinor, percent, targetKind } — validated.
+  effectParams     Json           @default("{}")
+  requiresApproval Boolean        @default(false)
+  active           Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([active, priority])
+  @@map("pricing_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Quotes — HISTORICAL ACCURACY centerpiece.
+// Quote -> QuoteVersion (frozen commercial totals) -> QuoteItem (frozen snapshot).
+// Editing appends a new version; existing versions are immutable.
+// ---------------------------------------------------------------------------
+
+model Quote {
+  id             String      @id @default(cuid())
+  reference      String      @unique // e.g. TL-Q-2026-000124
+  tripId         String
+  customerId     String
+  status         QuoteStatus @default(draft)
+  currentVersion Int         @default(1)
+  createdById    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  trip      Trip           @relation(fields: [tripId], references: [id])
+  customer  Customer       @relation(fields: [customerId], references: [id])
+  createdBy User?          @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+  versions  QuoteVersion[]
+
+  @@index([status])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("quotes")
+}
+
+model QuoteVersion {
+  id      String  @id @default(cuid())
+  quoteId String
+  version Int
+  note    String?
+
+  // Frozen context of what was quoted.
+  tripNameSnapshot   String
+  travelStartDate    DateTime
+  travelEndDate      DateTime
+  travellerCount     Int
+  // Raw selection inputs captured for reproducibility (structured JSON).
+  selectionsSnapshot Json     @default("{}")
+
+  // Frozen commercial totals (minor units).
+  subtotalMinor          BigInt
+  discountTotalMinor     BigInt  @default(0)
+  taxTotalMinor          BigInt  @default(0)
+  grandTotalMinor        BigInt
+  // INTERNAL-ONLY commercial view (never returned by public APIs).
+  supplierCostTotalMinor BigInt?
+  marginTotalMinor       BigInt?
+  marginPercentage       Float?
+
+  // Which engine produced these numbers (reproducibility).
+  pricingEngineVersion String
+  createdById          String?
+  createdAt            DateTime @default(now())
+
+  quote     Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  createdBy User?       @relation("QuoteVersionCreatedBy", fields: [createdById], references: [id])
+  items     QuoteItem[]
+
+  @@unique([quoteId, version])
+  @@map("quote_versions")
+}
+
+model QuoteItem {
+  id             String        @id @default(cuid())
+  quoteVersionId String
+  sortOrder      Int           @default(0)
+  componentType  ComponentKind
+  // Soft reference to the master item (nullable, NO FK — master data may be edited
+  // or removed later without affecting this frozen line).
+  componentId    String?
+
+  // Snapshot of display + pricing data at quote time.
+  componentNameSnapshot   String
+  descriptionSnapshot     String?
+  quantity                Int
+  unit                    PricingUnit
+  unitPriceMinor          BigInt
+  lineTotalMinor          BigInt
+  // INTERNAL-ONLY snapshot fields.
+  supplierCostMinor       BigInt?
+  marginMinor             BigInt?
+  marginPercentage        Float?
+  // Flexible pricing metadata frozen at snapshot time (season, occupancy, etc.).
+  pricingMetadataSnapshot Json        @default("{}")
+
+  version QuoteVersion @relation(fields: [quoteVersionId], references: [id], onDelete: Cascade)
+
+  @@index([quoteVersionId])
+  @@map("quote_items")
+}

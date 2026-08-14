@@ -4,7 +4,7 @@ import type { Role } from "@/config/roles";
 /**
  * Edge-safe base auth configuration.
  *
- * This file MUST NOT import Node-only code (mongoose, bcrypt) because it is used
+ * This file MUST NOT import Node-only code (Prisma, bcrypt) because it is used
  * by `middleware.ts`, which runs on the Edge runtime. The Credentials provider —
  * whose `authorize` needs the database — lives in ./index.ts instead.
  */

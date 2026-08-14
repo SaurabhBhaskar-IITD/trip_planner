@@ -45,8 +45,8 @@ export default function LoginPage() {
             <div className="flex items-start gap-2 rounded-lg border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-4 shrink-0" />
               <span>
-                No database is connected yet. Configure <code>MONGODB_URI</code> and seed a user to
-                enable sign-in. See the README for setup.
+                No database is connected yet. Configure <code>DATABASE_URL</code> (Neon PostgreSQL)
+                and seed a user to enable sign-in. See the README for setup.
               </span>
             </div>
           ) : null}

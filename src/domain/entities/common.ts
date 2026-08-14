@@ -1,7 +1,7 @@
 import type { CurrencyCode } from "@/domain/shared/money";
 import type { PricingUnit, Season } from "@/domain/shared/enums";
 
-/** Stringified ObjectId at the domain boundary — the domain never imports Mongoose. */
+/** Opaque entity id (a Postgres cuid). The domain never imports the ORM. */
 export type EntityId = string;
 
 export interface AuditInfo {

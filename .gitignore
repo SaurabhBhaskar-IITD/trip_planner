@@ -31,6 +31,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
+# prisma — generated client is regenerated via postinstall/db:generate
+/src/generated
+.prisma
+
 # testing
 /coverage
 
