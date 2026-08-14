@@ -17,23 +17,33 @@ import { z } from "zod";
  *   client code.
  */
 
+// Treat an empty / whitespace-only env var the same as an unset one. Hosts like
+// Vercel can inject declared-but-empty variables; without this an empty
+// DATABASE_URL would fail `.min(1)` and CRASH the build, instead of degrading to
+// the intended "not configured" state.
+const blankToUndefined = (v: unknown) =>
+  typeof v === "string" && v.trim() === "" ? undefined : v;
+
 const serverSchema = z.object({
   // Neon PostgreSQL connection string. Optional so the app can boot and render
   // the UI shell without a database; data code paths guard on isDatabaseConfigured.
   // The database/branch is chosen entirely via this URL (dev/staging/prod).
-  DATABASE_URL: z
-    .string()
-    .min(1)
-    .refine((v) => v.startsWith("postgres://") || v.startsWith("postgresql://"), {
-      message: "DATABASE_URL must be a PostgreSQL connection string",
-    })
-    .optional(),
-  AUTH_SECRET: z
-    .string()
-    .min(1, "AUTH_SECRET is required to sign session tokens")
+  DATABASE_URL: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .min(1)
+      .refine((v) => v.startsWith("postgres://") || v.startsWith("postgresql://"), {
+        message: "DATABASE_URL must be a PostgreSQL connection string",
+      })
+      .optional(),
+  ),
+  AUTH_SECRET: z.preprocess(
+    blankToUndefined,
     // In development we allow a fallback so the app boots for UI work; in
     // production a real secret is mandatory (enforced below).
-    .optional(),
+    z.string().min(1, "AUTH_SECRET is required to sign session tokens").optional(),
+  ),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
