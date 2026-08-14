@@ -2,9 +2,12 @@ import type { Permission } from "@/config/roles";
 import {
   LayoutDashboard,
   Map,
+  MapPin,
   BedDouble,
   Bus,
   Ticket,
+  UtensilsCrossed,
+  PackagePlus,
   Tags,
   FileText,
   Users,
@@ -31,6 +34,13 @@ export const NAV_ITEMS: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Overview" },
   { title: "Trips", href: "/trips", icon: Map, permission: "trip:read", group: "Catalogue" },
   {
+    title: "Destinations",
+    href: "/destinations",
+    icon: MapPin,
+    permission: "destination:read",
+    group: "Catalogue",
+  },
+  {
     title: "Accommodations",
     href: "/accommodations",
     icon: BedDouble,
@@ -49,6 +59,20 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/activities",
     icon: Ticket,
     permission: "activity:read",
+    group: "Catalogue",
+  },
+  {
+    title: "Meals",
+    href: "/meals",
+    icon: UtensilsCrossed,
+    permission: "meal:read",
+    group: "Catalogue",
+  },
+  {
+    title: "Add-ons",
+    href: "/addons",
+    icon: PackagePlus,
+    permission: "addon:read",
     group: "Catalogue",
   },
   {

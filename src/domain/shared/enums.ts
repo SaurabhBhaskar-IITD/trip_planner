@@ -104,3 +104,27 @@ export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 // --- Seasons -------------------------------------------------------------
 export const SEASONS = ["peak", "shoulder", "off_peak", "all"] as const;
 export type Season = (typeof SEASONS)[number];
+
+// --- Trips ---------------------------------------------------------------
+export const TRIP_STATUSES = ["draft", "active", "archived"] as const;
+export type TripStatus = (typeof TRIP_STATUSES)[number];
+
+// --- Itinerary -----------------------------------------------------------
+/** Kinds of ordered segment within an itinerary day. */
+export const SEGMENT_TYPES = [
+  "transfer",
+  "accommodation",
+  "meal",
+  "activity",
+  "sightseeing",
+  "free_time",
+  "note",
+] as const;
+export type SegmentType = (typeof SEGMENT_TYPES)[number];
+
+// --- Human labels (presentation only; safe on client) --------------------
+/** Turn an enum value like "six_sharing" / "per_room_per_night" into "Six sharing". */
+export function humanizeEnum(value: string): string {
+  const spaced = value.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}

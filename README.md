@@ -219,7 +219,8 @@ still shows ₹3,500.
 | Phase   | Scope                                                                          |
 | ------- | ------------------------------------------------------------------------------ |
 | **1** ✅ | Foundation: architecture, engines (skeleton), Prisma/Postgres schema, auth, UI shell, routes |
-| 2       | Master-data CRUD (trips, accommodations, transport, activities, meals, add-ons)|
+| **2A** ◐ | Master-data management. **Done:** reusable UI library, repositories/actions pattern, Destinations, Trips + relational itinerary editor. **Next:** Accommodations/Room types/Pricing, Transport, Activities, Meals, Add-ons |
+| 3       | Full pricing rule engine, quote builder, snapshotting, internal breakdown      |
 | 3       | Full pricing rule engine, quote builder, snapshotting, internal breakdown      |
 | 4       | Itinerary generation + customer-facing quote/itinerary output                  |
 | 5       | AI presenter (rephrase-only), public/CRM APIs, mobile                          |
