@@ -47,8 +47,15 @@ const serverSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
+const DEFAULT_APP_URL = "http://localhost:3000";
+
 const clientSchema = z.object({
-  NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  // Non-critical (auth uses trustHost; this is only for absolute links). Blank →
+  // default; a malformed value falls back rather than crashing the build. Set it
+  // to the real production URL for correct absolute links.
+  NEXT_PUBLIC_APP_URL: z
+    .preprocess(blankToUndefined, z.string().url().default(DEFAULT_APP_URL))
+    .catch(DEFAULT_APP_URL),
 });
 
 function formatIssues(error: z.ZodError): string {
