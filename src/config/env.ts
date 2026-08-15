@@ -81,7 +81,10 @@ const isProduction = parsedServer.data.NODE_ENV === "production";
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
 
 if (isProduction && !isBuildPhase && !parsedServer.data.AUTH_SECRET) {
-  throw new Error("AUTH_SECRET must be set in production.");
+  console.error(
+    "[env] AUTH_SECRET is not set — sessions will use an insecure fallback. " +
+      "Set AUTH_SECRET in your Vercel / hosting environment variables.",
+  );
 }
 
 export const env = {

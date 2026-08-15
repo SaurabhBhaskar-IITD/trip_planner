@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Info } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import { Brand } from "@/components/layout/brand";
 import { LoginForm } from "./login-form";
 import { env } from "@/config/env";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const authNotConfigured = params.error === "auth_not_configured";
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Brand panel */}
@@ -38,6 +44,17 @@ export default function LoginPage() {
               Use your Trip Le team credentials to continue.
             </p>
           </div>
+
+          {authNotConfigured ? (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive bg-destructive/10 p-3 text-xs text-destructive">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                <strong>AUTH_SECRET</strong> is not configured. Authentication cannot work without it.
+                Set <code>AUTH_SECRET</code> in your Vercel environment variables (generate one
+                with <code>openssl rand -base64 32</code>), then redeploy.
+              </span>
+            </div>
+          ) : null}
 
           <LoginForm />
 

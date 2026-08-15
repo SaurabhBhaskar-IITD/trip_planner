@@ -15,6 +15,7 @@ export function GET() {
     status: "ok",
     service: "trip-le-planner",
     databaseConfigured: env.isDatabaseConfigured,
+    authConfigured: Boolean(process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET),
     time: new Date().toISOString(),
   });
 }
