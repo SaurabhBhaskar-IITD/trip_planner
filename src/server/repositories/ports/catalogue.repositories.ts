@@ -91,6 +91,11 @@ export interface AccommodationRepository {
 
   /** Active properties in the given destinations — read-only trip integration. */
   listActiveByDestinations(destinationIds: string[]): Promise<AccommodationListItemDTO[]>;
+  /** Full detail (room types + prices) for active properties in the destinations — planner. */
+  listActiveDetailByDestinations(
+    destinationIds: string[],
+    opts: PriceReadOptions,
+  ): Promise<AccommodationDetailDTO[]>;
 }
 
 export interface TransportationRepository {
@@ -100,6 +105,7 @@ export interface TransportationRepository {
   update(id: string, input: TransportationInput): Promise<void>;
   setActive(id: string, active: boolean): Promise<void>;
   listActiveBrief(): Promise<TransportationListItemDTO[]>;
+  listActiveDetail(opts: PriceReadOptions): Promise<TransportationDetailDTO[]>;
 }
 
 export interface ActivityRepository {
@@ -109,6 +115,10 @@ export interface ActivityRepository {
   update(id: string, input: ActivityInput): Promise<void>;
   setActive(id: string, active: boolean): Promise<void>;
   listActiveByDestinations(destinationIds: string[]): Promise<ActivityListItemDTO[]>;
+  listActiveDetailByDestinations(
+    destinationIds: string[],
+    opts: PriceReadOptions,
+  ): Promise<ActivityDetailDTO[]>;
 }
 
 export interface MealRepository {
@@ -118,6 +128,7 @@ export interface MealRepository {
   update(id: string, input: MealInput): Promise<void>;
   setActive(id: string, active: boolean): Promise<void>;
   listActiveBrief(): Promise<MealListItemDTO[]>;
+  listActiveDetail(opts: PriceReadOptions): Promise<MealDetailDTO[]>;
 }
 
 export interface AddonRepository {
@@ -127,6 +138,7 @@ export interface AddonRepository {
   update(id: string, input: AddonInput): Promise<void>;
   setActive(id: string, active: boolean): Promise<void>;
   listActiveBrief(): Promise<AddonListItemDTO[]>;
+  listActiveDetail(opts: PriceReadOptions): Promise<AddonDetailDTO[]>;
 }
 
 /**

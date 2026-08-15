@@ -12,18 +12,10 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  accommodationRepository,
-  activityRepository,
-  addonRepository,
-  mealRepository,
-  transportationRepository,
-  tripRepository,
-} from "@/server/repositories";
-import { humanizeEnum } from "@/domain/shared/enums";
+import { tripOptionRepository, tripRepository } from "@/server/repositories";
 import { formatDate } from "@/lib/utils/format";
+import { TripOptionsEditor } from "./trip-options-editor";
 
 export const metadata: Metadata = { title: "Trip detail" };
 
@@ -41,18 +33,15 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   const daysCount = trip.itinerary.length;
   const segmentCount = trip.itinerary.reduce((n, d) => n + d.segments.length, 0);
 
-  // Master data available to this trip. Accommodations & activities relate to the
-  // trip through its DESTINATIONS (the only trip↔catalogue link the schema has);
-  // transport/meals/add-ons are a global catalogue. These are read-only "available
-  // options" — curated per-trip selection needs new join tables (see report).
-  const destinationIds = trip.destinations.map((d) => d.destinationId);
-  const [tripAccommodations, tripActivities, transportOptions, mealOptions, addonOptions] =
+  // Trip-specific options: which reusable master records THIS trip offers. Backed
+  // by the trip↔catalogue join tables. The planner shows exactly these.
+  const [accCandidates, transportCandidates, activityCandidates, mealCandidates, addonCandidates] =
     await Promise.all([
-      accommodationRepository.listActiveByDestinations(destinationIds),
-      activityRepository.listActiveByDestinations(destinationIds),
-      transportationRepository.listActiveBrief(),
-      mealRepository.listActiveBrief(),
-      addonRepository.listActiveBrief(),
+      tripOptionRepository.listCandidates(id, "accommodation"),
+      tripOptionRepository.listCandidates(id, "transportation"),
+      tripOptionRepository.listCandidates(id, "activity"),
+      tripOptionRepository.listCandidates(id, "meal"),
+      tripOptionRepository.listCandidates(id, "addon"),
     ]);
 
   return (
@@ -201,77 +190,78 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
         </TabsContent>
 
         <TabsContent value="accommodation">
-          <CatalogueTab
+          <OptionTab
             title="Accommodation options"
-            note="Active properties in this trip's destinations. Sourced from the shared catalogue — no duplicate records are created."
-            emptyHint="No active properties in these destinations yet. Add some under Accommodations."
-            items={tripAccommodations.map((a) => ({
-              id: a.id,
-              href: `/accommodations/${a.id}`,
-              title: a.name,
-              meta: [a.destinationName, humanizeEnum(a.category), `${a.roomTypeCount} room types`],
-            }))}
-          />
+            manageHref="/accommodations"
+            manageLabel="Manage accommodations"
+            canWrite={canWrite}
+          >
+            <TripOptionsEditor
+              tripId={trip.id}
+              kind="accommodation"
+              candidates={accCandidates}
+              canWrite={canWrite}
+              emptyHint="No accommodations exist yet. Create some under Accommodations, then enable them here."
+            />
+          </OptionTab>
         </TabsContent>
 
         <TabsContent value="transport">
-          <CatalogueTab
+          <OptionTab
             title="Transport options"
-            note="Active transport from the shared catalogue (global — not destination-scoped)."
-            emptyHint="No active transport yet. Add some under Transport."
-            items={transportOptions.map((t) => ({
-              id: t.id,
-              href: `/transport/${t.id}`,
-              title: t.name,
-              meta: [
-                humanizeEnum(t.mode),
-                t.routeFrom || t.routeTo ? `${t.routeFrom ?? "—"} → ${t.routeTo ?? "—"}` : null,
-                `Capacity ${t.capacity}`,
-              ],
-            }))}
-          />
+            manageHref="/transport"
+            manageLabel="Manage transport"
+            canWrite={canWrite}
+          >
+            <TripOptionsEditor
+              tripId={trip.id}
+              kind="transportation"
+              candidates={transportCandidates}
+              canWrite={canWrite}
+              emptyHint="No transport exists yet. Create some under Transport, then enable them here."
+            />
+          </OptionTab>
         </TabsContent>
 
         <TabsContent value="activities">
-          <CatalogueTab
+          <OptionTab
             title="Activity options"
-            note="Active activities in this trip's destinations (plus generic activities). Sourced from the shared catalogue."
-            emptyHint="No active activities in these destinations yet. Add some under Activities."
-            items={tripActivities.map((a) => ({
-              id: a.id,
-              href: `/activities/${a.id}`,
-              title: a.name,
-              meta: [humanizeEnum(a.type), a.destinationName],
-            }))}
-          />
+            manageHref="/activities"
+            manageLabel="Manage activities"
+            canWrite={canWrite}
+          >
+            <TripOptionsEditor
+              tripId={trip.id}
+              kind="activity"
+              candidates={activityCandidates}
+              canWrite={canWrite}
+              emptyHint="No activities exist yet. Create some under Activities, then enable them here."
+            />
+          </OptionTab>
         </TabsContent>
 
         <TabsContent value="meals">
-          <CatalogueTab
-            title="Meal options"
-            note="Active meal plans from the shared catalogue (global)."
-            emptyHint="No active meals yet. Add some under Meals."
-            items={mealOptions.map((m) => ({
-              id: m.id,
-              href: `/meals/${m.id}`,
-              title: m.name,
-              meta: [humanizeEnum(m.mealType), m.plan],
-            }))}
-          />
+          <OptionTab title="Meal options" manageHref="/meals" manageLabel="Manage meals" canWrite={canWrite}>
+            <TripOptionsEditor
+              tripId={trip.id}
+              kind="meal"
+              candidates={mealCandidates}
+              canWrite={canWrite}
+              emptyHint="No meals exist yet. Create some under Meals, then enable them here."
+            />
+          </OptionTab>
         </TabsContent>
 
         <TabsContent value="addons">
-          <CatalogueTab
-            title="Add-on options"
-            note="Active add-ons from the shared catalogue (global)."
-            emptyHint="No active add-ons yet. Add some under Add-ons."
-            items={addonOptions.map((a) => ({
-              id: a.id,
-              href: `/addons/${a.id}`,
-              title: a.name,
-              meta: [a.description],
-            }))}
-          />
+          <OptionTab title="Add-on options" manageHref="/addons" manageLabel="Manage add-ons" canWrite={canWrite}>
+            <TripOptionsEditor
+              tripId={trip.id}
+              kind="addon"
+              candidates={addonCandidates}
+              canWrite={canWrite}
+              emptyHint="No add-ons exist yet. Create some under Add-ons, then enable them here."
+            />
+          </OptionTab>
         </TabsContent>
       </Tabs>
     </>
@@ -287,71 +277,34 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-interface CatalogueItem {
-  id: string;
-  href: string;
-  title: string;
-  meta: (string | null)[];
-}
-
-/**
- * Read-only list of master-data options available to the trip. It links to the
- * shared master records (never duplicating them). Curated per-trip selection
- * (ticking specific options) is intentionally not implemented — the schema has no
- * trip↔catalogue join tables, so it is reported as a required schema change.
- */
-function CatalogueTab({
+/** Card wrapper for one trip-option tab: title + a link to manage that catalogue. */
+function OptionTab({
   title,
-  note,
-  emptyHint,
-  items,
+  manageHref,
+  manageLabel,
+  canWrite,
+  children,
 }: {
   title: string;
-  note: string;
-  emptyHint: string;
-  items: CatalogueItem[];
+  manageHref: string;
+  manageLabel: string;
+  canWrite: boolean;
+  children: ReactNode;
 }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">
-          {title} ({items.length})
-        </CardTitle>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        {canWrite ? (
+          <Button variant="outline" size="sm" asChild>
+            <Link href={manageHref}>
+              {manageLabel}
+              <ArrowRight />
+            </Link>
+          </Button>
+        ) : null}
       </CardHeader>
-      <CardContent className="space-y-4">
-        <Alert>
-          <AlertDescription className="text-xs">{note}</AlertDescription>
-        </Alert>
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{emptyHint}</p>
-        ) : (
-          <ul className="divide-y">
-            {items.map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <Link href={item.href} className="font-medium hover:underline">
-                    {item.title}
-                  </Link>
-                  <div className="mt-0.5 flex flex-wrap gap-1.5">
-                    {item.meta
-                      .filter((m): m is string => Boolean(m))
-                      .map((m, i) => (
-                        <Badge key={i} variant="outline" className="font-normal">
-                          {m}
-                        </Badge>
-                      ))}
-                  </div>
-                </div>
-                <Button variant="ghost" size="icon" aria-label={`Open ${item.title}`} asChild>
-                  <Link href={item.href}>
-                    <ArrowRight className="size-4" />
-                  </Link>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
   );
 }

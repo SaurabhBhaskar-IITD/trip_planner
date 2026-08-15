@@ -204,6 +204,19 @@ export class PrismaAccommodationRepository implements AccommodationRepository {
     });
     return rows.map(toListItem);
   }
+
+  async listActiveDetailByDestinations(
+    destinationIds: string[],
+    opts: PriceReadOptions,
+  ): Promise<AccommodationDetailDTO[]> {
+    if (destinationIds.length === 0) return [];
+    const rows = await prisma.accommodation.findMany({
+      where: { active: true, destinationId: { in: destinationIds } },
+      include: detailInclude,
+      orderBy: { name: "asc" },
+    });
+    return rows.map((r) => toDetail(r, opts.includeInternal));
+  }
 }
 
 export const accommodationRepository: AccommodationRepository =

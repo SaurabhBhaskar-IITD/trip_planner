@@ -24,6 +24,20 @@ function toListItem(row: ListRow): AddonListItemDTO {
   };
 }
 
+type DetailRow = Prisma.AddonGetPayload<{ include: { prices: true } }>;
+
+function toDetail(row: DetailRow, includeInternal: boolean): AddonDetailDTO {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    active: row.active,
+    prices: row.prices.map((p) => toPriceDTO(p, includeInternal)),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export class PrismaAddonRepository implements AddonRepository {
   async list(query: ListQuery): Promise<Paginated<AddonListItemDTO>> {
     const where: Prisma.AddonWhereInput = {};
@@ -55,16 +69,16 @@ export class PrismaAddonRepository implements AddonRepository {
       where: { id },
       include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
     });
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      active: row.active,
-      prices: row.prices.map((p) => toPriceDTO(p, opts.includeInternal)),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return row ? toDetail(row, opts.includeInternal) : null;
+  }
+
+  async listActiveDetail(opts: PriceReadOptions): Promise<AddonDetailDTO[]> {
+    const rows = await prisma.addon.findMany({
+      where: { active: true },
+      include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
+      orderBy: { name: "asc" },
+    });
+    return rows.map((r) => toDetail(r, opts.includeInternal));
   }
 
   async create(input: AddonInput): Promise<{ id: string }> {

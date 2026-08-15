@@ -141,6 +141,11 @@ async function main() {
   // --- Light catalogue (only if empty) ----------------------------------
   await seedCatalogueIfEmpty(destinations);
 
+  // --- Trip-specific available options (idempotent) ---------------------
+  // The planner shows ONLY a trip's enabled options. Enable a CURATED subset for
+  // the test trip (not every record) so trip-specific selection is demonstrable.
+  await seedTripOptions("himachal-explorer");
+
   console.log("Done. Sign in with the admin credentials above.");
 }
 
@@ -255,10 +260,12 @@ async function seedCatalogueIfEmpty(destinations: Record<string, string>) {
                     validUntil: new Date("2027-01-15"),
                   },
                   {
+                    // Year-round base (generic): applies whenever no seasonal
+                    // window matches, and is the unambiguous default without a date.
                     amountMinor: inr(3500),
                     supplierCostMinor: inr(2500),
                     unit: "per_room_per_night",
-                    season: "off_peak",
+                    season: "all",
                   },
                 ],
               },
@@ -293,8 +300,9 @@ async function seedCatalogueIfEmpty(destinations: Record<string, string>) {
               category: "premium",
               prices: {
                 create: [
-                  { amountMinor: inr(6500), supplierCostMinor: inr(4800), unit: "per_room_per_night", season: "peak" },
-                  { amountMinor: inr(5000), supplierCostMinor: inr(3600), unit: "per_room_per_night", season: "shoulder" },
+                  { amountMinor: inr(6500), supplierCostMinor: inr(4800), unit: "per_room_per_night", season: "peak", validFrom: new Date("2026-12-01"), validUntil: new Date("2027-01-15") },
+                  // Year-round base (generic) — unambiguous default.
+                  { amountMinor: inr(5000), supplierCostMinor: inr(3600), unit: "per_room_per_night", season: "all" },
                 ],
               },
             },
@@ -395,6 +403,83 @@ async function seedCatalogueIfEmpty(destinations: Record<string, string>) {
     });
     console.log("✔ Add-ons (transfer, extra night, guide, insurance) (+ prices)");
   }
+}
+
+/**
+ * Enable a curated subset of catalogue records as options for a test trip. Some
+ * records are deliberately left disabled to prove the planner respects
+ * trip-specific selection. Idempotent (upsert by composite key).
+ */
+async function seedTripOptions(tripSlug: string) {
+  const trip = await prisma.trip.findUnique({ where: { slug: tripSlug }, select: { id: true } });
+  if (!trip) return;
+  const tripId = trip.id;
+
+  const enableAcc = ["Hotel Snow Valley", "Hotel Mountain View"];
+  const enableTransport = [
+    "Tempo Traveller (12-seater)",
+    "Private SUV (Innova)",
+    "Volvo Bus",
+    "Kalka–Shimla Toy Train",
+  ]; // Private Sedan + Airport Transfer left OFF on purpose
+  const enableActivities = ["Paragliding (Solang)", "Shimla City Tour"]; // Kheerganga (Kasol) OFF
+  const enableAddons = ["Airport Transfer", "Extra Night", "Local Guide"]; // Travel Insurance OFF
+
+  const accs = await prisma.accommodation.findMany({
+    where: { name: { in: enableAcc } },
+    select: { id: true },
+  });
+  for (const a of accs)
+    await prisma.tripAccommodationOption.upsert({
+      where: { tripId_accommodationId: { tripId, accommodationId: a.id } },
+      create: { tripId, accommodationId: a.id, active: true },
+      update: { active: true },
+    });
+
+  const transports = await prisma.transportation.findMany({
+    where: { name: { in: enableTransport } },
+    select: { id: true },
+  });
+  for (const t of transports)
+    await prisma.tripTransportationOption.upsert({
+      where: { tripId_transportationId: { tripId, transportationId: t.id } },
+      create: { tripId, transportationId: t.id, active: true },
+      update: { active: true },
+    });
+
+  const activities = await prisma.activity.findMany({
+    where: { name: { in: enableActivities } },
+    select: { id: true },
+  });
+  for (const a of activities)
+    await prisma.tripActivityOption.upsert({
+      where: { tripId_activityId: { tripId, activityId: a.id } },
+      create: { tripId, activityId: a.id, active: true },
+      update: { active: true },
+    });
+
+  const meals = await prisma.meal.findMany({ select: { id: true } }); // all meal plans
+  for (const m of meals)
+    await prisma.tripMealOption.upsert({
+      where: { tripId_mealId: { tripId, mealId: m.id } },
+      create: { tripId, mealId: m.id, active: true },
+      update: { active: true },
+    });
+
+  const addons = await prisma.addon.findMany({
+    where: { name: { in: enableAddons } },
+    select: { id: true },
+  });
+  for (const ad of addons)
+    await prisma.tripAddonOption.upsert({
+      where: { tripId_addonId: { tripId, addonId: ad.id } },
+      create: { tripId, addonId: ad.id, active: true },
+      update: { active: true },
+    });
+
+  console.log(
+    `✔ Trip options for ${tripSlug}: ${accs.length} hotels, ${transports.length} transport, ${activities.length} activities, ${meals.length} meals, ${addons.length} add-ons`,
+  );
 }
 
 main()

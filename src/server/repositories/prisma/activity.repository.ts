@@ -33,6 +33,26 @@ function toListItem(row: ListRow): ActivityListItemDTO {
   };
 }
 
+type DetailRow = Prisma.ActivityGetPayload<{
+  include: { destination: { select: { name: true } }; prices: true };
+}>;
+
+function toDetail(row: DetailRow, includeInternal: boolean): ActivityDetailDTO {
+  return {
+    id: row.id,
+    name: row.name,
+    destinationId: row.destinationId,
+    destinationName: row.destination?.name ?? null,
+    type: row.type as ActivityType,
+    description: row.description,
+    durationMinutes: row.durationMinutes,
+    active: row.active,
+    prices: row.prices.map((p) => toPriceDTO(p, includeInternal)),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export class PrismaActivityRepository implements ActivityRepository {
   async list(query: ListQuery): Promise<Paginated<ActivityListItemDTO>> {
     const where: Prisma.ActivityWhereInput = {};
@@ -74,20 +94,26 @@ export class PrismaActivityRepository implements ActivityRepository {
         prices: { orderBy: [{ active: "desc" }, { season: "asc" }] },
       },
     });
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      destinationId: row.destinationId,
-      destinationName: row.destination?.name ?? null,
-      type: row.type as ActivityType,
-      description: row.description,
-      durationMinutes: row.durationMinutes,
-      active: row.active,
-      prices: row.prices.map((p) => toPriceDTO(p, opts.includeInternal)),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return row ? toDetail(row, opts.includeInternal) : null;
+  }
+
+  /** Active activities in the given destinations PLUS generic (no-destination) ones. */
+  async listActiveDetailByDestinations(
+    destinationIds: string[],
+    opts: PriceReadOptions,
+  ): Promise<ActivityDetailDTO[]> {
+    const rows = await prisma.activity.findMany({
+      where: {
+        active: true,
+        OR: [{ destinationId: { in: destinationIds } }, { destinationId: null }],
+      },
+      include: {
+        destination: { select: { name: true } },
+        prices: { orderBy: [{ active: "desc" }, { season: "asc" }] },
+      },
+      orderBy: { name: "asc" },
+    });
+    return rows.map((r) => toDetail(r, opts.includeInternal));
   }
 
   async create(input: ActivityInput): Promise<{ id: string }> {

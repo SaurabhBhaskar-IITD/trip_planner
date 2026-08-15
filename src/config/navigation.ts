@@ -10,6 +10,7 @@ import {
   PackagePlus,
   Tags,
   FileText,
+  ClipboardList,
   Users,
   Settings,
   type LucideIcon,
@@ -81,6 +82,13 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Tags,
     permission: "pricing:read",
     group: "Catalogue",
+  },
+  {
+    title: "Planner",
+    href: "/planner",
+    icon: ClipboardList,
+    permission: "quote:create",
+    group: "Sales",
   },
   { title: "Quotes", href: "/quotes", icon: FileText, permission: "quote:read", group: "Sales" },
   {

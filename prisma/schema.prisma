@@ -232,6 +232,14 @@ model Trip {
   itinerary    ItineraryDay[]
   quotes       Quote[]
 
+  // Trip-specific available options (which master records this trip offers). Master
+  // data stays reusable; these join rows decide what the planner shows per trip.
+  accommodationOptions TripAccommodationOption[]
+  transportOptions     TripTransportationOption[]
+  activityOptions      TripActivityOption[]
+  mealOptions          TripMealOption[]
+  addonOptions         TripAddonOption[]
+
   @@index([status])
   @@map("trips")
 }
@@ -248,6 +256,96 @@ model TripDestination {
   @@id([tripId, destinationId])
   @@index([destinationId])
   @@map("trip_destinations")
+}
+
+// ---------------------------------------------------------------------------
+// Trip-specific available options.
+//
+// A trip explicitly declares which reusable master records it offers (§ product
+// requirement). Master data is NEVER duplicated — these are thin join rows. Each
+// carries just enough trip-scoped configuration: display order, enable/disable,
+// a default marker and an optional note. Deleting a trip or a master record
+// cascades the join rows away.
+// ---------------------------------------------------------------------------
+
+model TripAccommodationOption {
+  tripId          String
+  accommodationId String
+  sortOrder       Int     @default(0)
+  active          Boolean @default(true)
+  isDefault       Boolean @default(false)
+  note            String?
+
+  trip          Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  accommodation Accommodation @relation(fields: [accommodationId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, accommodationId])
+  @@index([accommodationId])
+  @@map("trip_accommodation_options")
+}
+
+model TripTransportationOption {
+  tripId           String
+  transportationId String
+  sortOrder        Int     @default(0)
+  active           Boolean @default(true)
+  isDefault        Boolean @default(false)
+  note             String?
+
+  trip           Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  transportation Transportation @relation(fields: [transportationId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, transportationId])
+  @@index([transportationId])
+  @@map("trip_transportation_options")
+}
+
+model TripActivityOption {
+  tripId     String
+  activityId String
+  sortOrder  Int     @default(0)
+  active     Boolean @default(true)
+  isDefault  Boolean @default(false)
+  note       String?
+
+  trip     Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, activityId])
+  @@index([activityId])
+  @@map("trip_activity_options")
+}
+
+model TripMealOption {
+  tripId    String
+  mealId    String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+  isDefault Boolean @default(false)
+  note      String?
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  meal Meal @relation(fields: [mealId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, mealId])
+  @@index([mealId])
+  @@map("trip_meal_options")
+}
+
+model TripAddonOption {
+  tripId    String
+  addonId   String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+  isDefault Boolean @default(false)
+  note      String?
+
+  trip  Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  addon Addon @relation(fields: [addonId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, addonId])
+  @@index([addonId])
+  @@map("trip_addon_options")
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +409,7 @@ model Accommodation {
 
   destination Destination @relation(fields: [destinationId], references: [id])
   roomTypes   RoomType[]
+  tripOptions TripAccommodationOption[]
 
   @@index([destinationId])
   @@index([active])
@@ -377,7 +476,8 @@ model Transportation {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  prices TransportationPrice[]
+  prices      TransportationPrice[]
+  tripOptions TripTransportationOption[]
 
   @@index([mode])
   @@index([active])
@@ -422,6 +522,7 @@ model Activity {
 
   destination Destination?    @relation(fields: [destinationId], references: [id])
   prices      ActivityPrice[]
+  tripOptions TripActivityOption[]
 
   @@index([destinationId])
   @@index([active])
@@ -462,7 +563,8 @@ model Meal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  prices MealPrice[]
+  prices      MealPrice[]
+  tripOptions TripMealOption[]
 
   @@index([active])
   @@map("meals")
@@ -501,7 +603,8 @@ model Addon {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  prices AddonPrice[]
+  prices      AddonPrice[]
+  tripOptions TripAddonOption[]
 
   @@index([active])
   @@map("addons")
@@ -589,11 +692,16 @@ model QuoteVersion {
 
   // Frozen context of what was quoted.
   tripNameSnapshot   String
-  travelStartDate    DateTime
-  travelEndDate      DateTime
+  // Nullable: the MVP planner is date-independent (§36). A departure date is
+  // captured when provided; otherwise the quote is a date-independent snapshot.
+  travelStartDate    DateTime?
+  travelEndDate      DateTime?
   travellerCount     Int
   // Raw selection inputs captured for reproducibility (structured JSON).
   selectionsSnapshot Json     @default("{}")
+  // Frozen customised itinerary document (structured JSON) generated at quote
+  // time, so a historical quote's itinerary is immutable even if the trip changes.
+  itinerarySnapshot  Json     @default("{}")
 
   // Frozen commercial totals (minor units).
   subtotalMinor          BigInt

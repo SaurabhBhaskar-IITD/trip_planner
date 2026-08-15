@@ -37,6 +37,25 @@ function toListItem(row: ListRow): TransportationListItemDTO {
   };
 }
 
+type DetailRow = Prisma.TransportationGetPayload<{ include: { prices: true } }>;
+
+function toDetail(row: DetailRow, includeInternal: boolean): TransportationDetailDTO {
+  return {
+    id: row.id,
+    name: row.name,
+    mode: row.mode as TransportMode,
+    provider: row.provider,
+    vehicleType: row.vehicleType,
+    capacity: row.capacity,
+    routeFrom: row.routeFrom,
+    routeTo: row.routeTo,
+    active: row.active,
+    prices: row.prices.map((p) => toPriceDTO(p, includeInternal)),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export class PrismaTransportationRepository implements TransportationRepository {
   async list(query: ListQuery): Promise<Paginated<TransportationListItemDTO>> {
     const where: Prisma.TransportationWhereInput = {};
@@ -77,21 +96,16 @@ export class PrismaTransportationRepository implements TransportationRepository 
       where: { id },
       include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
     });
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      mode: row.mode as TransportMode,
-      provider: row.provider,
-      vehicleType: row.vehicleType,
-      capacity: row.capacity,
-      routeFrom: row.routeFrom,
-      routeTo: row.routeTo,
-      active: row.active,
-      prices: row.prices.map((p) => toPriceDTO(p, opts.includeInternal)),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return row ? toDetail(row, opts.includeInternal) : null;
+  }
+
+  async listActiveDetail(opts: PriceReadOptions): Promise<TransportationDetailDTO[]> {
+    const rows = await prisma.transportation.findMany({
+      where: { active: true },
+      include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
+      orderBy: { name: "asc" },
+    });
+    return rows.map((r) => toDetail(r, opts.includeInternal));
   }
 
   async create(input: TransportationInput): Promise<{ id: string }> {

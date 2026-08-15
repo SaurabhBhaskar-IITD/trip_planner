@@ -26,6 +26,21 @@ function toListItem(row: ListRow): MealListItemDTO {
   };
 }
 
+type DetailRow = Prisma.MealGetPayload<{ include: { prices: true } }>;
+
+function toDetail(row: DetailRow, includeInternal: boolean): MealDetailDTO {
+  return {
+    id: row.id,
+    name: row.name,
+    mealType: row.mealType as MealType,
+    plan: row.plan as MealPlan,
+    active: row.active,
+    prices: row.prices.map((p) => toPriceDTO(p, includeInternal)),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export class PrismaMealRepository implements MealRepository {
   async list(query: ListQuery): Promise<Paginated<MealListItemDTO>> {
     const where: Prisma.MealWhereInput = {};
@@ -59,17 +74,16 @@ export class PrismaMealRepository implements MealRepository {
       where: { id },
       include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
     });
-    if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      mealType: row.mealType as MealType,
-      plan: row.plan as MealPlan,
-      active: row.active,
-      prices: row.prices.map((p) => toPriceDTO(p, opts.includeInternal)),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return row ? toDetail(row, opts.includeInternal) : null;
+  }
+
+  async listActiveDetail(opts: PriceReadOptions): Promise<MealDetailDTO[]> {
+    const rows = await prisma.meal.findMany({
+      where: { active: true },
+      include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
+      orderBy: { name: "asc" },
+    });
+    return rows.map((r) => toDetail(r, opts.includeInternal));
   }
 
   async create(input: MealInput): Promise<{ id: string }> {
