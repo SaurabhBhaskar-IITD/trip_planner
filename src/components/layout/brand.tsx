@@ -1,43 +1,70 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Trip Le wordmark. A compact SVG monogram + wordmark so it stays crisp at any
- * size and needs no external asset. Replace the mark with the official Trip Le
- * logo asset when brand guidelines are provided.
+ * Official Trip Le wordmark (public/logo.png — the brand asset, never redrawn).
+ *
+ * The asset is a transparent PNG whose glyphs are the brand orange, so it sits
+ * correctly on the navy sidebar and on light surfaces alike. Intrinsic size is
+ * 622×233; `height` drives the render and the width is derived from that exact
+ * ratio so the logo is never stretched.
  */
+const LOGO_RATIO = 622 / 233;
+
 export function Brand({
   className,
   showWordmark = true,
+  height = 26,
+  tone = "onDark",
 }: {
   className?: string;
+  /** Show the "Planner / Internal console" lockup beside the logo. */
   showWordmark?: boolean;
+  /** Rendered logo height in px; width follows the true aspect ratio. */
+  height?: number;
+  /** Which surface the mark sits on — controls the supporting text colour only. */
+  tone?: "onDark" | "onLight";
 }) {
+  const width = Math.round(height * LOGO_RATIO);
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <svg
-        width="30"
-        height="30"
-        viewBox="0 0 32 32"
-        fill="none"
-        aria-hidden="true"
-        className="shrink-0"
-      >
-        <rect width="32" height="32" rx="8" className="fill-primary" />
-        {/* Stylised compass / location mark */}
-        <path
-          d="M16 7l3.2 6.8L26 16l-6.8 2.2L16 25l-2.2-6.8L7 16l6.8-2.2L16 7z"
-          className="fill-primary-foreground"
-        />
-      </svg>
+      <Image
+        src="/logo.png"
+        alt="Trip Le"
+        width={width}
+        height={height}
+        priority
+        className="shrink-0 object-contain"
+        style={{ width, height }}
+      />
       {showWordmark ? (
-        <div className="flex flex-col leading-none">
-          <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-            Trip Le <span className="text-primary-foreground/90">Planner</span>
-          </span>
-          <span className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/50">
-            Internal Console
-          </span>
-        </div>
+        <>
+          <span
+            aria-hidden="true"
+            className={cn(
+              "h-6 w-px shrink-0",
+              tone === "onDark" ? "bg-sidebar-foreground/25" : "bg-border",
+            )}
+          />
+          <div className="flex flex-col leading-none">
+            <span
+              className={cn(
+                "text-sm font-semibold tracking-tight",
+                tone === "onDark" ? "text-sidebar-foreground" : "text-foreground",
+              )}
+            >
+              Planner
+            </span>
+            <span
+              className={cn(
+                "mt-0.5 text-[10px] uppercase tracking-[0.16em]",
+                tone === "onDark" ? "text-sidebar-foreground/50" : "text-muted-foreground",
+              )}
+            >
+              Internal console
+            </span>
+          </div>
+        </>
       ) : null}
     </div>
   );

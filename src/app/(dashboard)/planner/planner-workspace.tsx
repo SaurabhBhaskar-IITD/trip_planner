@@ -88,6 +88,7 @@ export function PlannerWorkspace({
   function onTripChange(id: string) {
     setTripId(id);
     setConfig(null);
+    setError(null); // a previous trip's failure must not linger over the new one
     resetSelections();
     startLoadConfig(async () => {
       const res = await loadPlannerConfigAction(id);
@@ -305,7 +306,10 @@ export function PlannerWorkspace({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {config.occupancies.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No accommodation configured for this trip&apos;s destinations.</p>
+                    <p className="text-sm text-muted-foreground">
+                      This trip does not offer any accommodation yet. Enable properties for it under
+                      Trips → Options.
+                    </p>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <FormField label="Occupancy" htmlFor="occ">
@@ -425,6 +429,7 @@ export function PlannerWorkspace({
                 value={config?.transport.find((t) => t.id === transportId)?.name ?? "—"}
               />
               <SummaryRow label="Activities" value={String(activityIds.size)} />
+              <SummaryRow label="Meals" value={String(mealIds.size)} />
               <SummaryRow label="Add-ons" value={String(addonIds.size)} />
 
               {error ? (
@@ -569,7 +574,7 @@ function ToggleGroup({
                 aria-pressed={on}
                 className={
                   on
-                    ? "rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                    ? "rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs font-medium text-accent-ink"
                     : "rounded-full border bg-card px-3 py-1 text-xs hover:bg-accent"
                 }
               >

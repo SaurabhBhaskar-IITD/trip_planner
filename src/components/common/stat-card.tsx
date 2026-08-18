@@ -43,7 +43,7 @@ export function StatCard({
           <p className="text-xs text-muted-foreground">{showValue ? hint : unavailableReason}</p>
         </div>
         {Icon ? (
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-accent-ink">
             <Icon className="size-5" />
           </div>
         ) : null}

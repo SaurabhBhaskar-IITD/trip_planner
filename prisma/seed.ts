@@ -21,7 +21,30 @@ const DEV = "[DEV SAMPLE — not production data]";
 /** Rupees → integer minor units (paise) as BigInt. */
 const inr = (rupees: number) => BigInt(Math.round(rupees * 100));
 
+/**
+ * Admin credentials are configured by ENVIRONMENT VARIABLE, not by positional
+ * argument. Silently ignoring `npm run seed <email> <password>` is a trap: the
+ * seed appears to succeed while actually writing the DEFAULT password, so the
+ * credentials the operator believes they set never work. Fail loudly instead.
+ */
+function rejectPositionalArgs(): void {
+  const args = process.argv.slice(2).filter((a) => a !== "--");
+  if (args.length === 0) return;
+  console.error(
+    `\n✖ This script does not take positional arguments (received: ${args.join(" ")}).\n` +
+      `  Admin credentials are read from environment variables.\n\n` +
+      `  PowerShell:\n` +
+      `    $env:SEED_ADMIN_EMAIL="you@trip-le.com"; $env:SEED_ADMIN_PASSWORD="YourPassword"; npm run seed\n\n` +
+      `  Bash:\n` +
+      `    SEED_ADMIN_EMAIL=you@trip-le.com SEED_ADMIN_PASSWORD=YourPassword npm run seed\n\n` +
+      `  Omit them to seed the documented defaults instead.\n`,
+  );
+  process.exit(1);
+}
+
 async function main() {
+  rejectPositionalArgs();
+
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is not set. Add it to your .env before seeding.");
   }
@@ -30,6 +53,7 @@ async function main() {
   const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@trip-le.com").toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe#12345";
   const name = process.env.SEED_ADMIN_NAME ?? "Trip Le Admin";
+  const usingDefaults = !process.env.SEED_ADMIN_PASSWORD;
   const passwordHash = await bcrypt.hash(password, 12);
   // Reset passwordHash on every run too — otherwise an admin created by an earlier
   // seed keeps its original password and the documented dev credentials stop
@@ -40,7 +64,14 @@ async function main() {
     update: { name, role: "admin", active: true, passwordHash },
     create: { email, name, passwordHash, role: "admin", active: true },
   });
-  console.log(`✔ Admin user: ${admin.email} (password reset to configured value)`);
+  // Say exactly which password was written. "reset to configured value" hid the
+  // difference between a custom password and the fallback default.
+  console.log(
+    `✔ Admin user: ${admin.email} — password set to ` +
+      (usingDefaults
+        ? `the DEFAULT "${password}" (SEED_ADMIN_PASSWORD was not set)`
+        : "the value from SEED_ADMIN_PASSWORD"),
+  );
 
   // --- Destinations (reusable) ------------------------------------------
   const destData = [

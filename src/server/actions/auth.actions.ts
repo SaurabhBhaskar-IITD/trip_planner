@@ -51,10 +51,18 @@ export async function loginAction(
     // Next's redirect is thrown as an error by design — rethrow to let it happen.
     if (isNextRedirectError(error)) throw error;
     if (error instanceof AuthError) {
+      // Only CredentialsSignin means the email/password were actually wrong —
+      // Auth.js raises it when `authorize` returns null. Anything else (most
+      // often CallbackRouteError wrapping a database outage) must NOT be blamed
+      // on the user's credentials, or a server problem looks like a typo.
+      if (error.type === "CredentialsSignin") {
+        return { ok: false, code: "UNAUTHENTICATED", message: "Invalid email or password." };
+      }
+      console.error("[auth] sign-in failed for a non-credential reason:", error);
       return {
         ok: false,
-        code: "UNAUTHENTICATED",
-        message: "Invalid email or password.",
+        code: "INTERNAL",
+        message: "Sign-in is temporarily unavailable. Please try again in a moment.",
       };
     }
     return actionFail(error);

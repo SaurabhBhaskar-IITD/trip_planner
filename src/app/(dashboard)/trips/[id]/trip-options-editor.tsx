@@ -26,19 +26,22 @@ export function TripOptionsEditor({
 }) {
   const [rows, setRows] = useState(candidates);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   function toggle(row: OptionCandidateDTO) {
     if (!canWrite) return;
     const next = !row.enabled;
     setPendingId(row.id);
+    setError(null);
     // optimistic
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, enabled: next } : r)));
     startTransition(async () => {
       const res = await setTripOptionAction(tripId, kind, row.id, next);
       if (!res.ok) {
-        // revert on failure
+        // Revert AND say why — a toggle that silently springs back is unexplainable.
         setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, enabled: !next } : r)));
+        setError(res.message);
       }
       setPendingId(null);
     });
@@ -71,6 +74,11 @@ export function TripOptionsEditor({
       <p className="text-xs text-muted-foreground">
         {enabledCount} of {rows.length} enabled — click to toggle what this trip offers.
       </p>
+      {error ? (
+        <p role="alert" className="text-xs font-medium text-destructive">
+          {error}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-1.5">
         {rows.map((r) => {
           const busy = pendingId === r.id;
@@ -83,7 +91,7 @@ export function TripOptionsEditor({
               aria-pressed={r.enabled}
               className={
                 r.enabled
-                  ? "flex items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+                  ? "flex items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-accent-ink"
                   : "flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs hover:bg-accent"
               }
               title={r.subtitle}

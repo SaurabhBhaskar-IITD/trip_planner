@@ -111,9 +111,14 @@ export function BreakdownTable({
           value={taxConfigured ? formatMinorAsINR(taxTotalMinor) : "Not configured"}
           muted={!taxConfigured}
         />
-        <div className="flex items-center justify-between border-t pt-2 text-base font-semibold">
-          <span>Total</span>
-          <span className="tabular-nums">{formatMinorAsINR(grandTotalMinor)}</span>
+        {/* §25 — the final price is the strongest element on the page. */}
+        <div className="mt-2 rounded-lg border border-primary/30 bg-accent/60 px-3 py-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-ink">
+            Total trip price
+          </div>
+          <div className="mt-0.5 text-2xl font-bold tabular-nums text-foreground">
+            {formatMinorAsINR(grandTotalMinor)}
+          </div>
         </div>
         {canViewInternal && internal ? (
           <div className="mt-2 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">

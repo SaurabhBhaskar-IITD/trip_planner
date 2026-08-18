@@ -49,6 +49,15 @@ const config: Config = {
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+          /* Deepened orange for TEXT/icons — flat brand orange fails AA on light. */
+          ink: "hsl(var(--accent-ink))",
+        },
+        /* Fixed logo colors, for brand marks and sparing accents. */
+        brand: {
+          navy: "hsl(var(--brand-navy))",
+          orange: "hsl(var(--brand-orange))",
+          yellow: "hsl(var(--brand-yellow))",
+          red: "hsl(var(--brand-red))",
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",

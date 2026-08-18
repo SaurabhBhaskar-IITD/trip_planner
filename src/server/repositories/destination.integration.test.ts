@@ -12,6 +12,9 @@ import type { DestinationRepository } from "./ports/catalogue.repositories";
  * slug-uniqueness → deactivate, then cleans up after itself.
  */
 const TEST_DB = process.env.TEST_DATABASE_URL;
+// Neon is serverless: a cold start alone can exceed vitest's 5s default, which
+// made this suite fail spuriously. Match the timeout used by the other DB suites.
+const DB_TIMEOUT = 40_000;
 
 describe.skipIf(!TEST_DB)("PrismaDestinationRepository (integration)", () => {
   const suffix = Date.now().toString(36);
@@ -23,7 +26,7 @@ describe.skipIf(!TEST_DB)("PrismaDestinationRepository (integration)", () => {
     process.env.DATABASE_URL = TEST_DB;
     const mod = await import("./prisma/destination.repository");
     repo = mod.destinationRepository;
-  });
+  }, DB_TIMEOUT);
 
   afterAll(async () => {
     if (createdId) {
@@ -31,7 +34,7 @@ describe.skipIf(!TEST_DB)("PrismaDestinationRepository (integration)", () => {
       await prisma.destination.deleteMany({ where: { id: createdId } });
       await prisma.$disconnect();
     }
-  });
+  }, DB_TIMEOUT);
 
   it("creates, finds, and enforces slug uniqueness", async () => {
     const created = await repo.create({
@@ -54,5 +57,5 @@ describe.skipIf(!TEST_DB)("PrismaDestinationRepository (integration)", () => {
     await repo.setActive(created.id, false);
     const afterDeactivate = await repo.findById(created.id);
     expect(afterDeactivate?.active).toBe(false);
-  });
+  }, DB_TIMEOUT);
 });

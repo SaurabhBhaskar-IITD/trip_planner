@@ -36,7 +36,7 @@ export function UserMenu({ name, email, role }: { name: string; email: string; r
           <div className="flex flex-col">
             <span className="truncate text-sm font-medium">{name}</span>
             <span className="truncate text-xs font-normal text-muted-foreground">{email}</span>
-            <span className="mt-1 text-xs font-normal text-primary">{ROLE_LABELS[role]}</span>
+            <span className="mt-1 text-xs font-normal text-accent-ink">{ROLE_LABELS[role]}</span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

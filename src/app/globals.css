@@ -4,96 +4,125 @@
 
 /**
  * Trip Le Planner design tokens.
- * A restrained, premium palette: slate neutrals with a deep teal brand accent.
- * All values are HSL channels consumed by tailwind.config.ts.
+ *
+ * The palette is derived from the OFFICIAL Trip Le brand assets (src/app/icon.png,
+ * public/logo.png) and kept consistent with the trip-le.com website:
+ *
+ *   Deep navy  #0A192F  -> 216 65% 11%   (navigation, headings, structure)
+ *   Orange     #DF7B24  -> 28 75% 51%    (primary actions, active states, brand)
+ *   Yellow     #FFC234  -> 42 100% 60%   (sparing accent)
+ *   Red/pink   #F31942  -> 349 90% 53%   (sparing highlight + destructive)
+ *
+ * Values are HSL CHANNELS consumed by tailwind.config.ts, so light/dark themes
+ * stay a single source of truth. Orange at 51% lightness only reaches ~3:1 on
+ * white, so orange TEXT uses the deepened `--accent-ink` (#A0520E, AA 5.6:1)
+ * while flat orange is reserved for FILLS with white/near-black text on top.
  */
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 222 24% 12%;
+    /* Warm white canvas, white cards — premium and readable for long sessions. */
+    --background: 30 25% 98%;
+    --foreground: 215.7 64.9% 11.2%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 24% 12%;
+    --card-foreground: 215.7 64.9% 11.2%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 24% 12%;
+    --popover-foreground: 215.7 64.9% 11.2%;
 
-    /* Brand — deep teal */
-    --primary: 187 82% 24%;
-    --primary-foreground: 180 40% 98%;
+    /* Brand — Trip Le orange */
+    --primary: 27.9 74.5% 50.8%;
+    --primary-foreground: 36 62.5% 6.3%;
 
-    --secondary: 210 16% 93%;
-    --secondary-foreground: 222 24% 20%;
+    --secondary: 30 16% 94%;
+    --secondary-foreground: 215.7 64.9% 15%;
 
-    --muted: 210 16% 95%;
-    --muted-foreground: 215 16% 42%;
+    --muted: 30 16% 95%;
+    --muted-foreground: 215 18% 40%;
 
-    --accent: 187 60% 92%;
-    --accent-foreground: 187 82% 20%;
+    /* Soft orange tint for hovers/selected surfaces + deep orange ink for text. */
+    --accent: 26 80% 94%;
+    --accent-foreground: 28 84% 30%;
+    --accent-ink: 27.9 83.9% 34.1%;
 
-    --destructive: 0 72% 45%;
+    /* Brand red — also used for destructive so errors stay on-brand. */
+    --destructive: 349 82% 47%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 58% 32%;
+    --success: 152 55% 32%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 34 92% 42%;
+    --warning: 38 92% 42%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 214 20% 88%;
-    --input: 214 20% 86%;
-    --ring: 187 82% 30%;
+    /* Fixed brand accents (identical in both themes — they are logo colors). */
+    --brand-navy: 215.7 64.9% 11.2%;
+    --brand-orange: 27.9 74.5% 50.8%;
+    --brand-yellow: 42 100% 60.2%;
+    --brand-red: 348.7 90.1% 52.5%;
 
-    /* Sidebar surface — darker, distinct from content canvas */
-    --sidebar: 200 30% 12%;
-    --sidebar-foreground: 205 20% 78%;
-    --sidebar-border: 200 24% 20%;
-    --sidebar-accent: 187 70% 22%;
-    --sidebar-accent-foreground: 180 40% 96%;
+    --border: 30 14% 90%;
+    --input: 30 14% 86%;
+    --ring: 27.9 74.5% 50.8%;
+
+    /* Sidebar — deep navy, per brand guidance for navigation surfaces. */
+    --sidebar: 215.7 64.9% 11.2%;
+    --sidebar-foreground: 210 25% 82%;
+    --sidebar-border: 216 42% 20%;
+    --sidebar-accent: 27.9 74.5% 50.8%;
+    --sidebar-accent-foreground: 36 62.5% 6.3%;
 
     --radius: 0.6rem;
   }
 
   .dark {
-    --background: 222 28% 8%;
-    --foreground: 210 20% 92%;
+    --background: 216 50% 7%;
+    --foreground: 210 25% 94%;
 
-    --card: 222 24% 11%;
-    --card-foreground: 210 20% 92%;
+    --card: 216 52% 10%;
+    --card-foreground: 210 25% 94%;
 
-    --popover: 222 24% 11%;
-    --popover-foreground: 210 20% 92%;
+    --popover: 216 52% 10%;
+    --popover-foreground: 210 25% 94%;
 
-    --primary: 186 66% 42%;
-    --primary-foreground: 200 40% 6%;
+    /* Slightly lifted orange so it stays vivid on dark surfaces. */
+    --primary: 28 80% 56%;
+    --primary-foreground: 36 62.5% 6.3%;
 
-    --secondary: 217 20% 18%;
-    --secondary-foreground: 210 20% 90%;
+    --secondary: 216 30% 17%;
+    --secondary-foreground: 210 25% 92%;
 
-    --muted: 217 20% 16%;
-    --muted-foreground: 215 16% 62%;
+    --muted: 216 30% 15%;
+    --muted-foreground: 214 18% 65%;
 
-    --accent: 187 40% 20%;
-    --accent-foreground: 180 40% 90%;
+    --accent: 28 45% 20%;
+    --accent-foreground: 28 90% 78%;
+    --accent-ink: 28 80% 68%;
 
-    --destructive: 0 62% 50%;
+    --destructive: 349 82% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 46% 44%;
+    --success: 152 48% 45%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 34 84% 52%;
-    --warning-foreground: 20 40% 8%;
+    --warning: 42 90% 55%;
+    --warning-foreground: 216 65% 8%;
 
-    --border: 217 20% 20%;
-    --input: 217 20% 22%;
-    --ring: 186 66% 46%;
+    --brand-navy: 215.7 64.9% 11.2%;
+    --brand-orange: 27.9 74.5% 50.8%;
+    --brand-yellow: 42 100% 60.2%;
+    --brand-red: 348.7 90.1% 52.5%;
 
-    --sidebar: 222 30% 6%;
-    --sidebar-foreground: 210 16% 70%;
-    --sidebar-border: 217 22% 16%;
-    --sidebar-accent: 187 60% 30%;
-    --sidebar-accent-foreground: 180 40% 94%;
+    --border: 216 28% 20%;
+    --input: 216 28% 22%;
+    --ring: 28 80% 56%;
+
+    /* Darker than the content canvas so the nav still reads as a distinct surface. */
+    --sidebar: 216 60% 5%;
+    --sidebar-foreground: 210 20% 76%;
+    --sidebar-border: 216 34% 14%;
+    --sidebar-accent: 27.9 74.5% 50.8%;
+    --sidebar-accent-foreground: 36 62.5% 6.3%;
   }
 }
 

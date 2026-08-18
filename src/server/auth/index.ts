@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authConfig } from "./auth.config";
 import { verifyPassword } from "./password";
 import { userRepository } from "@/server/repositories";
+import { DatabaseError } from "@/lib/errors/app-error";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -28,12 +29,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const { email, password } = parsed.data;
 
-        // If the DB isn't configured/reachable, authentication fails (no crash).
+        // A database failure is NOT a credential failure. Returning null here
+        // would tell the user "invalid email or password" when the real problem
+        // is infrastructure — so we log it and rethrow, letting the action layer
+        // report an honest "temporarily unavailable" instead.
+        //
+        // Neon auto-suspends when idle and its cold start can exceed the connect
+        // timeout, so one retry turns the common transient case into a success.
         let user;
         try {
           user = await userRepository.findActiveByEmail(email);
-        } catch {
-          return null;
+        } catch (first) {
+          console.warn("[auth] user lookup failed, retrying once:", first);
+          try {
+            user = await userRepository.findActiveByEmail(email);
+          } catch (second) {
+            console.error("[auth] user lookup failed after retry:", second);
+            throw new DatabaseError("Could not reach the user database.", second);
+          }
         }
         if (!user?.passwordHash) return null;
 
