@@ -7,6 +7,7 @@ import { parseTripForm, tripStatusSchema } from "@/lib/validation/trip.schema";
 import { slugify } from "@/lib/utils/slug";
 import { ValidationError } from "@/lib/errors/app-error";
 import type { TripStatus } from "@/domain/shared/enums";
+import { notifyPublicSite, type NotifyResult } from "@/server/public/notify-public-site";
 import { actionFail, actionOk, type ActionResult } from "./action-result";
 import { normalizePrismaError } from "./prisma-error";
 
@@ -72,24 +73,39 @@ export async function updateTripAction(
       );
     }
     const slug = await resolveSlug(parsed.data.name, parsed.data.slug, id);
+    const before = await tripRepository.findDetail(id);
     await tripRepository.update(id, { ...parsed.data, slug });
     revalidatePath("/trips");
     revalidatePath(`/trips/${id}`);
+    // This form can change status, name, duration AND slug — all public-facing.
+    // On a slug change the OLD slug's cached options must be dropped as well.
+    await notifyPublicSite(slug);
+    if (before && before.slug !== slug) await notifyPublicSite(before.slug);
     return actionOk({ id });
   } catch (error) {
     return actionFail(normalizePrismaError(error));
   }
 }
 
-export async function setTripStatusAction(id: string, status: TripStatus): Promise<ActionResult> {
+/**
+ * Change publication status. `active` = PUBLISHED: only active trips are served
+ * by the public API, so this is also what opens/closes a trip for booking on
+ * trip-le.com — hence the website is told to revalidate immediately.
+ */
+export async function setTripStatusAction(
+  id: string,
+  status: TripStatus,
+): Promise<ActionResult<{ notify: NotifyResult }>> {
   try {
-    await requirePermission("trip:write");
+    const user = await requirePermission("trip:write");
     const parsed = tripStatusSchema.safeParse(status);
     if (!parsed.success) return actionFail(new ValidationError("Invalid status."));
-    await tripRepository.setStatus(id, parsed.data);
+    const trip = await tripRepository.findDetail(id);
+    if (!trip) return actionFail(new ValidationError("Trip not found."));
+    await tripRepository.setStatus(id, parsed.data, user.id);
     revalidatePath("/trips");
     revalidatePath(`/trips/${id}`);
-    return actionOk(undefined);
+    return actionOk({ notify: await notifyPublicSite(trip.slug) });
   } catch (error) {
     return actionFail(normalizePrismaError(error));
   }

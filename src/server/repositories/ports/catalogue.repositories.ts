@@ -59,7 +59,10 @@ export interface TripRepository {
   slugExists(slug: string, exceptId?: string): Promise<boolean>;
   create(input: TripInput & { slug: string }): Promise<{ id: string }>;
   update(id: string, input: TripInput & { slug: string }): Promise<void>;
-  setStatus(id: string, status: TripStatus): Promise<void>;
+  /** Publication status. `updatedById` records who changed it (minimal audit). */
+  setStatus(id: string, status: TripStatus, updatedById?: string | null): Promise<void>;
+  /** Whether the planner owns this trip's public customizations on trip-le.com. */
+  setPublicOptionsEnabled(id: string, enabled: boolean, updatedById?: string | null): Promise<void>;
   duplicate(id: string, newSlug: string): Promise<{ id: string }>;
 
   // Itinerary management (ordered days + segments; ordering persisted in DB).

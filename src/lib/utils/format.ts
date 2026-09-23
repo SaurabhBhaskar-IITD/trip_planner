@@ -60,6 +60,21 @@ export function pricingUnitLabel(unit: string): string {
   return PRICING_UNIT_LABELS[unit] ?? unit.replace(/_/g, " ");
 }
 
+/**
+ * "4D / 3N" — or "Not set" when the trip's duration has not been decided yet
+ * (a catalogue placeholder). Never renders a guessed 0.
+ */
+export function formatDuration(
+  days: number | null | undefined,
+  nights: number | null | undefined,
+  style: "short" | "long" = "short",
+): string {
+  if (days == null && nights == null) return "Not set";
+  const d = days == null ? "?" : String(days);
+  const n = nights == null ? "?" : String(nights);
+  return style === "long" ? `${d} Days / ${n} Nights` : `${d}D / ${n}N`;
+}
+
 /** "TL-2026-000123" style human reference from a numeric sequence. */
 export function formatQuoteReference(sequence: number, year = new Date().getFullYear()): string {
   return `TL-${year}-${String(sequence).padStart(6, "0")}`;

@@ -7,6 +7,14 @@ import { TRIP_STATUSES } from "@/domain/shared/enums";
  * the relationship (nights typically days-1) is a business nicety, not enforced,
  * because some products legitimately differ.
  */
+
+/** An empty form field means "unknown", which is stored as NULL — not 0. */
+function blankToNull<T extends z.ZodTypeAny>(inner: T) {
+  return z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? null : v),
+    inner.nullable(),
+  );
+}
 export const tripInputSchema = z.object({
   name: z.string().trim().min(3, "Name must be at least 3 characters").max(160),
   slug: z
@@ -18,8 +26,12 @@ export const tripInputSchema = z.object({
     .or(z.literal("")),
   summary: z.string().trim().max(300).optional().or(z.literal("")),
   description: z.string().trim().max(5000).optional().or(z.literal("")),
-  durationDays: z.coerce.number().int("Whole days only").min(1, "At least 1 day").max(60),
-  durationNights: z.coerce.number().int("Whole nights only").min(0).max(59),
+  // Blank = not decided yet (catalogue placeholder). Quoting is blocked until a
+  // duration is set, so an empty value can never be silently treated as zero.
+  durationDays: blankToNull(
+    z.coerce.number().int("Whole days only").min(1, "At least 1 day").max(60),
+  ),
+  durationNights: blankToNull(z.coerce.number().int("Whole nights only").min(0).max(59)),
   status: z.enum(TRIP_STATUSES).default("draft"),
   /** Ordered destination ids attached to the trip. */
   destinationIds: z.array(z.string().min(1)).default([]),

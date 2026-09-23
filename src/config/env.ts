@@ -45,6 +45,16 @@ const serverSchema = z.object({
     z.string().min(1, "AUTH_SECRET is required to sign session tokens").optional(),
   ),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+
+  // --- Public website integration (all optional: the planner runs without them,
+  // and each feature reports itself as unconfigured instead of crashing). -------
+  // Private Vercel Blob store holding itinerary PDFs (shared with trip-le.com).
+  BLOB_READ_WRITE_TOKEN: z.preprocess(blankToUndefined, z.string().min(1).optional()),
+  // Base URL of the public booking site, used to trigger cache revalidation.
+  PUBLIC_SITE_URL: z.preprocess(blankToUndefined, z.string().url().optional()),
+  // Shared secret between planner and website: authenticates the website's calls
+  // to /api/internal/* AND signs the planner's revalidation requests.
+  PLANNER_WEBSITE_SHARED_SECRET: z.preprocess(blankToUndefined, z.string().min(32).optional()),
 });
 
 const DEFAULT_APP_URL = "http://localhost:3000";

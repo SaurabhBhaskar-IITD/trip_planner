@@ -14,7 +14,7 @@ import { PaginationBar } from "@/components/common/pagination-bar";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
 import { tripRepository, parseListQuery } from "@/server/repositories";
-import { formatDate } from "@/lib/utils/format";
+import { formatDate, formatDuration } from "@/lib/utils/format";
 import type { TripListItemDTO } from "@/types/master-data";
 import { TripRowActions } from "./trip-row-actions";
 
@@ -61,7 +61,7 @@ export default async function TripsPage({
       header: "Duration",
       cell: (t) => (
         <span className="whitespace-nowrap text-sm tabular-nums">
-          {t.durationDays}D / {t.durationNights}N
+          {formatDuration(t.durationDays, t.durationNights)}
         </span>
       ),
     },

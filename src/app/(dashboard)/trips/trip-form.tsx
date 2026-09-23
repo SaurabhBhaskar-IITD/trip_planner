@@ -119,7 +119,7 @@ export function TripForm({
                 <FormField
                   label="Days"
                   htmlFor="durationDays"
-                  required
+                  hint="Leave blank if not decided yet"
                   error={fieldErrors?.durationDays?.[0]}
                 >
                   <Input
@@ -127,8 +127,7 @@ export function TripForm({
                     name="durationDays"
                     type="number"
                     min={1}
-                    defaultValue={trip?.durationDays ?? 1}
-                    required
+                    defaultValue={trip?.durationDays ?? ""}
                   />
                 </FormField>
                 <FormField
@@ -141,7 +140,7 @@ export function TripForm({
                     name="durationNights"
                     type="number"
                     min={0}
-                    defaultValue={trip?.durationNights ?? 0}
+                    defaultValue={trip?.durationNights ?? ""}
                   />
                 </FormField>
               </div>

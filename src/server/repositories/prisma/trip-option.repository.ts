@@ -329,13 +329,19 @@ export class PrismaTripOptionRepository implements TripOptionRepository {
         else await prisma.tripMealOption.deleteMany({ where: { tripId, mealId: masterId } });
         return;
       case "addon":
+        // Add-ons carry trip-specific price/description overrides, so disabling
+        // DEACTIVATES the row instead of deleting it (re-enabling restores them).
         if (enabled)
           await prisma.tripAddonOption.upsert({
             where: { tripId_addonId: { tripId, addonId: masterId } },
             create: { tripId, addonId: masterId, active: true },
             update: { active: true },
           });
-        else await prisma.tripAddonOption.deleteMany({ where: { tripId, addonId: masterId } });
+        else
+          await prisma.tripAddonOption.updateMany({
+            where: { tripId, addonId: masterId },
+            data: { active: false },
+          });
         return;
     }
   }

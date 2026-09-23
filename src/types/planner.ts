@@ -14,8 +14,9 @@ import type {
 export interface TripOptionDTO {
   id: string;
   name: string;
-  durationDays: number;
-  durationNights: number;
+  /** null = duration not published yet (catalogue placeholder). */
+  durationDays: number | null;
+  durationNights: number | null;
 }
 
 /** Everything available to configure a quote for a selected trip (no internal $). */

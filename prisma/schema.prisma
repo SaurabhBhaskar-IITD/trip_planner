@@ -220,17 +220,34 @@ model Trip {
   slug           String     @unique
   summary        String?
   description    String?
-  durationDays   Int
-  durationNights Int
+  // Public grouping shown on trip-le.com/tours (Himachal Pradesh, Rajasthan,
+  // International, …). Plain text: a full category taxonomy would be more
+  // machinery than this needs.
+  region         String?
+  // NULL = duration not published/decided yet (catalogue placeholder). Code must
+  // treat null as "unknown" and block quoting rather than assume a number.
+  durationDays   Int?
+  durationNights Int?
   status         TripStatus @default(draft)
+  // Does the PLANNER own this trip's public customizations on trip-le.com?
+  //
+  // OFF (default): the public API behaves as if the planner does not know the
+  // trip, so trip-le.com keeps whatever it does today (its own hard-coded
+  // add-ons). Importing the public catalogue therefore changes nothing for
+  // customers. Turn ON per trip, once its customizations are configured here.
+  // ON + status `active` is what actually sells planner options online.
+  publicOptionsEnabled Boolean @default(false)
   // Optimistic/versioning marker for the trip PRODUCT definition (not quotes).
   version        Int        @default(1)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+  // Who last changed the trip (publication status included) — minimal audit.
+  updatedById    String?
 
   destinations TripDestination[]
   itinerary    ItineraryDay[]
   quotes       Quote[]
+  documents    ItineraryDocument[]
 
   // Trip-specific available options (which master records this trip offers). Master
   // data stays reusable; these join rows decide what the planner shows per trip.
@@ -332,6 +349,10 @@ model TripMealOption {
   @@map("trip_meal_options")
 }
 
+// Add-ons double as the trip's PUBLIC CUSTOMIZATIONS (sold on trip-le.com). Beyond
+// on/off + ordering, a trip may override the master add-on's price/description,
+// and group mutually-exclusive options (e.g. room sharing: pick exactly one).
+// Deactivating keeps the row (and its overrides) so it can be re-activated.
 model TripAddonOption {
   tripId    String
   addonId   String
@@ -340,12 +361,59 @@ model TripAddonOption {
   isDefault Boolean @default(false)
   note      String?
 
+  // Trip-specific selling price. When set it REPLACES the master AddonPrice for
+  // this trip (Airport Transfer can cost ₹1,500 on one trip and more on another).
+  // Both fields are set together or not at all (validated in the application).
+  priceOverrideMinor  BigInt?
+  priceOverrideUnit   PricingUnit?
+  // Customer-facing description for this trip; falls back to the master text.
+  descriptionOverride String?
+  // Options sharing a group are mutually exclusive (customer picks one).
+  exclusiveGroup      String?
+
+  // Minimal audit trail for admin changes (activation, price, publication).
+  updatedAt   DateTime @default(now()) @updatedAt
+  updatedById String?
+
   trip  Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
   addon Addon @relation(fields: [addonId], references: [id], onDelete: Cascade)
 
   @@id([tripId, addonId])
   @@index([addonId])
   @@map("trip_addon_options")
+}
+
+// ---------------------------------------------------------------------------
+// Itinerary documents (the designed PDF customers receive after payment).
+//
+// The binary lives in PRIVATE object storage (Vercel Blob); only metadata is
+// here. Documents are APPEND-ONLY: replacing a PDF inserts version N+1 and never
+// touches version N, because paid bookings reference the exact version they
+// bought. The current document is simply the highest version for the trip.
+// ---------------------------------------------------------------------------
+
+model ItineraryDocument {
+  id           String   @id @default(cuid())
+  tripId       String
+  version      Int
+  // Sanitised original filename shown to users (never used as a storage path).
+  fileName     String
+  // Private blob pathname. Useless without the storage token; never returned
+  // by a public API.
+  blobPathname String   @unique
+  sizeBytes    Int
+  // Integrity fingerprint computed server-side from the stored bytes.
+  sha256       String
+  contentType  String   @default("application/pdf")
+  uploadedAt   DateTime @default(now())
+  uploadedById String?
+
+  // Restrict: a document that bookings may reference must never vanish with a
+  // cascading trip delete.
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Restrict)
+
+  @@unique([tripId, version])
+  @@map("itinerary_documents")
 }
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import type {
   TripOptionDTO,
 } from "@/types/planner";
 import { humanizeEnum } from "@/domain/shared/enums";
-import { formatMinorAsINR } from "@/lib/utils/format";
+import { formatMinorAsINR, formatDuration } from "@/lib/utils/format";
 import {
   calculatePlannerQuoteAction,
   loadPlannerConfigAction,
@@ -116,7 +116,12 @@ export function PlannerWorkspace({
 
   function buildRequest(): PlannerRequest {
     return {
-      customer: { id: customerId, name: name.trim(), phone: phone.trim(), email: email.trim() || undefined },
+      customer: {
+        id: customerId,
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+      },
       tripId,
       travellerCount,
       travelStartDate: travelDate || undefined,
@@ -207,15 +212,27 @@ export function PlannerWorkspace({
                       }}
                       placeholder="+91 …"
                     />
-                    <Button type="button" variant="outline" size="icon" onClick={onCustomerSearch} aria-label="Find existing customer">
-                      {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={onCustomerSearch}
+                      aria-label="Find existing customer"
+                    >
+                      {searching ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Search className="size-4" />
+                      )}
                     </Button>
                   </div>
                 </FormField>
               </div>
               {customerMatches.length > 0 ? (
                 <div className="rounded-md border bg-muted/30 p-2 text-sm">
-                  <div className="mb-1 text-xs text-muted-foreground">Existing customers — click to use:</div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    Existing customers — click to use:
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {customerMatches.map((c) => (
                       <button
@@ -233,7 +250,12 @@ export function PlannerWorkspace({
               ) : null}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField label="Email (optional)" htmlFor="cust-email">
-                  <Input id="cust-email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
+                  <Input
+                    id="cust-email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                  />
                 </FormField>
                 <FormField label="Travellers" htmlFor="travellers" required>
                   <Input
@@ -269,7 +291,7 @@ export function PlannerWorkspace({
                     <SelectContent>
                       {trips.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
-                          {t.name} ({t.durationNights}N/{t.durationDays}D)
+                          {t.name} ({formatDuration(t.durationDays, t.durationNights)})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -280,7 +302,15 @@ export function PlannerWorkspace({
                   htmlFor="date"
                   hint="Resolves seasonal prices; omit for a date-independent quote."
                 >
-                  <Input id="date" type="date" value={travelDate} onChange={(e) => { setTravelDate(e.target.value); setCalc(null); }} />
+                  <Input
+                    id="date"
+                    type="date"
+                    value={travelDate}
+                    onChange={(e) => {
+                      setTravelDate(e.target.value);
+                      setCalc(null);
+                    }}
+                  />
                 </FormField>
               </div>
               {loadingConfig ? (
@@ -291,7 +321,9 @@ export function PlannerWorkspace({
               {config ? (
                 <div className="flex flex-wrap gap-1.5 text-xs">
                   {config.trip.destinations.map((d) => (
-                    <Badge key={d.destinationId} variant="secondary">{d.name}</Badge>
+                    <Badge key={d.destinationId} variant="secondary">
+                      {d.name}
+                    </Badge>
                   ))}
                 </div>
               ) : null}
@@ -315,14 +347,20 @@ export function PlannerWorkspace({
                       <FormField label="Occupancy" htmlFor="occ">
                         <Select
                           value={occupancy}
-                          onValueChange={(v) => { setOccupancy(v); setAccommodationId(""); setCalc(null); }}
+                          onValueChange={(v) => {
+                            setOccupancy(v);
+                            setAccommodationId("");
+                            setCalc(null);
+                          }}
                         >
                           <SelectTrigger id="occ">
                             <SelectValue placeholder="Choose sharing" />
                           </SelectTrigger>
                           <SelectContent>
                             {config.occupancies.map((o) => (
-                              <SelectItem key={o} value={o}>{humanizeEnum(o)} sharing</SelectItem>
+                              <SelectItem key={o} value={o}>
+                                {humanizeEnum(o)} sharing
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -330,15 +368,22 @@ export function PlannerWorkspace({
                       <FormField label="Property" htmlFor="acc">
                         <Select
                           value={accommodationId}
-                          onValueChange={(v) => { setAccommodationId(v); setCalc(null); }}
+                          onValueChange={(v) => {
+                            setAccommodationId(v);
+                            setCalc(null);
+                          }}
                           disabled={!occupancy}
                         >
                           <SelectTrigger id="acc">
-                            <SelectValue placeholder={occupancy ? "Choose property" : "Pick occupancy first"} />
+                            <SelectValue
+                              placeholder={occupancy ? "Choose property" : "Pick occupancy first"}
+                            />
                           </SelectTrigger>
                           <SelectContent>
                             {eligibleAccommodations.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>{a.name} · {humanizeEnum(a.category)}</SelectItem>
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.name} · {humanizeEnum(a.category)}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -357,7 +402,13 @@ export function PlannerWorkspace({
                     <p className="text-sm text-muted-foreground">No transport configured.</p>
                   ) : (
                     <FormField label="Transport option" htmlFor="tr">
-                      <Select value={transportId} onValueChange={(v) => { setTransportId(v); setCalc(null); }}>
+                      <Select
+                        value={transportId}
+                        onValueChange={(v) => {
+                          setTransportId(v);
+                          setCalc(null);
+                        }}
+                      >
                         <SelectTrigger id="tr">
                           <SelectValue placeholder="Choose transport" />
                         </SelectTrigger>
@@ -398,7 +449,12 @@ export function PlannerWorkspace({
                     onToggle={(id) => toggle(addonIds, setAddonIds, id)}
                   />
                   <FormField label="Internal note (optional)" htmlFor="note">
-                    <Input id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. honeymoon couple" />
+                    <Input
+                      id="note"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="e.g. honeymoon couple"
+                    />
                   </FormField>
                 </CardContent>
               </Card>
@@ -418,11 +474,7 @@ export function PlannerWorkspace({
               <SummaryRow label="Trip" value={config?.trip.name ?? "—"} />
               <SummaryRow
                 label="Accommodation"
-                value={
-                  accommodationId && occupancy
-                    ? `${humanizeEnum(occupancy)} sharing`
-                    : "—"
-                }
+                value={accommodationId && occupancy ? `${humanizeEnum(occupancy)} sharing` : "—"}
               />
               <SummaryRow
                 label="Transport"
@@ -439,7 +491,11 @@ export function PlannerWorkspace({
                 </Alert>
               ) : null}
 
-              <Button className="w-full" onClick={onCalculate} disabled={!canCalculate || calculating}>
+              <Button
+                className="w-full"
+                onClick={onCalculate}
+                disabled={!canCalculate || calculating}
+              >
                 {calculating ? <Loader2 className="animate-spin" /> : <Calculator />}
                 Calculate price
               </Button>
@@ -495,11 +551,13 @@ export function PlannerWorkspace({
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-1.5 text-xs">
                 <Badge variant="outline">
-                  {calc.allocation.travellerCount} travellers · {calc.allocation.nights}N/{calc.allocation.days}D
+                  {calc.allocation.travellerCount} travellers · {calc.allocation.nights}N/
+                  {calc.allocation.days}D
                 </Badge>
                 {calc.allocation.rooms != null ? (
                   <Badge variant="outline">
-                    {calc.allocation.rooms} {calc.allocation.occupancy ? `${humanizeEnum(calc.allocation.occupancy)} ` : ""}
+                    {calc.allocation.rooms}{" "}
+                    {calc.allocation.occupancy ? `${humanizeEnum(calc.allocation.occupancy)} ` : ""}
                     room(s)
                   </Badge>
                 ) : null}

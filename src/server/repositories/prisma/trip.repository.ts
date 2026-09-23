@@ -39,9 +39,11 @@ function toDetailDTO(row: DetailRow): TripDetailDTO {
     slug: row.slug,
     summary: row.summary,
     description: row.description,
+    region: row.region,
     durationDays: row.durationDays,
     durationNights: row.durationNights,
     status: row.status as TripStatus,
+    publicOptionsEnabled: row.publicOptionsEnabled,
     version: row.version,
     destinations: row.destinations.map((td) => ({
       destinationId: td.destinationId,
@@ -197,8 +199,19 @@ export class PrismaTripRepository implements TripRepository {
     });
   }
 
-  async setStatus(id: string, status: TripStatus): Promise<void> {
-    await prisma.trip.update({ where: { id }, data: { status } });
+  async setStatus(id: string, status: TripStatus, updatedById?: string | null): Promise<void> {
+    await prisma.trip.update({ where: { id }, data: { status, updatedById: updatedById ?? null } });
+  }
+
+  async setPublicOptionsEnabled(
+    id: string,
+    enabled: boolean,
+    updatedById?: string | null,
+  ): Promise<void> {
+    await prisma.trip.update({
+      where: { id },
+      data: { publicOptionsEnabled: enabled, updatedById: updatedById ?? null },
+    });
   }
 
   async duplicate(id: string, newSlug: string): Promise<{ id: string }> {

@@ -14,6 +14,12 @@ import { PLANNER_VERSION, type Occupancy, type PlannerItineraryDay, type Planner
  */
 export interface GenerateItineraryInput {
   trip: TripDetailDTO;
+  /**
+   * Passed explicitly (not read off the trip) because a catalogue placeholder
+   * may have no duration yet; the caller has already established real numbers.
+   */
+  durationDays: number;
+  durationNights: number;
   customerName: string;
   travellerCount: number;
   occupancy?: Occupancy;
@@ -112,8 +118,8 @@ export function generateItinerary(input: GenerateItineraryInput): PlannerItinera
   return {
     generatorVersion: PLANNER_VERSION,
     tripName: input.trip.name,
-    durationDays: input.trip.durationDays,
-    durationNights: input.trip.durationNights,
+    durationDays: input.durationDays,
+    durationNights: input.durationNights,
     travellerCount: input.travellerCount,
     preparedFor: input.customerName,
     accommodationSummary,

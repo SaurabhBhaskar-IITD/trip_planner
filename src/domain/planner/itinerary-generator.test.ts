@@ -11,6 +11,8 @@ function trip(): TripDetailDTO {
     slug: "himachal-explorer",
     summary: null,
     description: null,
+    publicOptionsEnabled: false,
+    region: null,
     durationDays: 7,
     durationNights: 6,
     status: "active",
@@ -29,9 +31,33 @@ function trip(): TripDetailDTO {
         fromName: "Delhi",
         toName: "Shimla",
         segments: [
-          { id: "s1", sortOrder: 0, type: "transfer", title: "Delhi → Shimla", detail: null, transportMode: "bus", mealType: null },
-          { id: "s2", sortOrder: 1, type: "accommodation", title: "Hotel check-in", detail: null, transportMode: null, mealType: null },
-          { id: "s3", sortOrder: 2, type: "meal", title: "Dinner", detail: null, transportMode: null, mealType: "dinner" },
+          {
+            id: "s1",
+            sortOrder: 0,
+            type: "transfer",
+            title: "Delhi → Shimla",
+            detail: null,
+            transportMode: "bus",
+            mealType: null,
+          },
+          {
+            id: "s2",
+            sortOrder: 1,
+            type: "accommodation",
+            title: "Hotel check-in",
+            detail: null,
+            transportMode: null,
+            mealType: null,
+          },
+          {
+            id: "s3",
+            sortOrder: 2,
+            type: "meal",
+            title: "Dinner",
+            detail: null,
+            transportMode: null,
+            mealType: "dinner",
+          },
         ],
       },
       {
@@ -44,7 +70,15 @@ function trip(): TripDetailDTO {
         fromName: null,
         toName: null,
         segments: [
-          { id: "s4", sortOrder: 0, type: "sightseeing", title: "Kufri", detail: null, transportMode: null, mealType: null },
+          {
+            id: "s4",
+            sortOrder: 0,
+            type: "sightseeing",
+            title: "Kufri",
+            detail: null,
+            transportMode: null,
+            mealType: null,
+          },
         ],
       },
     ],
@@ -55,6 +89,8 @@ describe("generateItinerary", () => {
   it("reflects the selected transport on transfer days and accommodation on stay days (§25)", () => {
     const doc = generateItinerary({
       trip: trip(),
+      durationDays: 7,
+      durationNights: 6,
       customerName: "Rahul Sharma",
       travellerCount: 6,
       occupancy: "double",
@@ -80,6 +116,8 @@ describe("generateItinerary", () => {
   it("derives inclusions from the actual selected configuration (§27)", () => {
     const doc = generateItinerary({
       trip: trip(),
+      durationDays: 7,
+      durationNights: 6,
       customerName: "Rahul Sharma",
       travellerCount: 6,
       occupancy: "double",
@@ -98,6 +136,8 @@ describe("generateItinerary", () => {
   it("is deterministic", () => {
     const args = {
       trip: trip(),
+      durationDays: 7,
+      durationNights: 6,
       customerName: "A",
       travellerCount: 2,
       activityNames: [],

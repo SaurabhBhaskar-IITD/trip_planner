@@ -23,6 +23,17 @@ export type {
   TripOptionKind,
   OptionCandidateDTO,
 } from "./ports/trip-option.repository";
+export type {
+  TripCustomizationRepository,
+  CustomizationRowDTO,
+  CustomizationPatch,
+  PublicTripRecord,
+} from "./ports/trip-customization.repository";
+export type {
+  ItineraryDocumentRepository,
+  ItineraryDocumentDTO,
+  ItineraryDocumentStorage,
+} from "./ports/itinerary-document.repository";
 
 // Concrete Prisma implementations (infrastructure).
 export { userRepository, PrismaUserRepository } from "./prisma/user.repository";
@@ -52,5 +63,13 @@ export {
   tripOptionRepository,
   PrismaTripOptionRepository,
 } from "./prisma/trip-option.repository";
+export {
+  tripCustomizationRepository,
+  PrismaTripCustomizationRepository,
+} from "./prisma/trip-customization.repository";
+export {
+  itineraryDocumentRepository,
+  PrismaItineraryDocumentRepository,
+} from "./prisma/itinerary-document.repository";
 
 export { parseListQuery, paginationArgs, pageCount, type ListQuery } from "./query";

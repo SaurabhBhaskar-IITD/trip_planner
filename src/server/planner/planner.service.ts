@@ -8,9 +8,11 @@ import {
   parseListQuery,
   quoteStoreRepository,
   transportationRepository,
+  tripCustomizationRepository,
   tripOptionRepository,
   tripRepository,
 } from "@/server/repositories";
+import type { PricingUnit } from "@/domain/shared/enums";
 import type { CreateQuoteItemData, CreateQuoteVersionData } from "@/server/repositories";
 import { computePrice } from "@/domain/pricing/engine";
 import type { PricingContext } from "@/domain/pricing/types";
@@ -36,6 +38,39 @@ import type {
 
 const EPOCH = new Date(0);
 
+/**
+ * A trip-specific add-on price REPLACES the catalogue prices for that trip, so an
+ * internal quote and the public website charge the same amount for the same
+ * customization. Represented as a single active generic price row.
+ */
+function applyAddonOverrides(
+  tripId: string,
+  addons: AddonDetailDTO[],
+  overrides: Map<string, { amountMinor: number; unit: PricingUnit }>,
+): AddonDetailDTO[] {
+  return addons.map((addon) => {
+    const o = overrides.get(addon.id);
+    if (!o) return addon;
+    return {
+      ...addon,
+      prices: [
+        {
+          id: `trip-override:${tripId}:${addon.id}`,
+          amountMinor: o.amountMinor,
+          currency: "INR",
+          unit: o.unit,
+          season: null,
+          validFrom: null,
+          validUntil: null,
+          minPax: null,
+          maxPax: null,
+          active: true,
+        },
+      ],
+    };
+  });
+}
+
 function addDays(d: Date, days: number): Date {
   const copy = new Date(d);
   copy.setDate(copy.getDate() + days);
@@ -44,7 +79,9 @@ function addDays(d: Date, days: number): Date {
 
 /** Active trips available to plan against. */
 export async function listTripOptions(): Promise<TripOptionDTO[]> {
-  const { items } = await tripRepository.list(parseListQuery({ status: "active" }, { pageSize: 100 }));
+  const { items } = await tripRepository.list(
+    parseListQuery({ status: "active" }, { pageSize: 100 }),
+  );
   return items.map((t) => ({
     id: t.id,
     name: t.name,
@@ -64,17 +101,21 @@ export async function loadConfig(tripId: string): Promise<PlannerConfigDTO | nul
   if (!trip) return null;
   const opts = { includeInternal: false };
 
-  const [accommodations, activities, transport, meals, addons] = await Promise.all([
+  const [accommodations, activities, transport, meals, rawAddons, overrides] = await Promise.all([
     tripOptionRepository.listAccommodationOptions(tripId, opts),
     tripOptionRepository.listActivityOptions(tripId, opts),
     tripOptionRepository.listTransportOptions(tripId, opts),
     tripOptionRepository.listMealOptions(tripId, opts),
     tripOptionRepository.listAddonOptions(tripId, opts),
+    tripCustomizationRepository.priceOverrides(tripId),
   ]);
+  const addons = applyAddonOverrides(tripId, rawAddons, overrides);
 
   const occupancies = [
     ...new Set(
-      accommodations.flatMap((a) => a.roomTypes.filter((rt) => rt.active).map((rt) => rt.occupancy)),
+      accommodations.flatMap((a) =>
+        a.roomTypes.filter((rt) => rt.active).map((rt) => rt.occupancy),
+      ),
     ),
   ];
 
@@ -106,23 +147,38 @@ async function loadSelection(
   const opts = { includeInternal };
   const problems: string[] = [];
 
-  const [accIds, trIds, actIds, mealIds, addonIds, accommodation, transport, activitiesRaw, mealsRaw, addonsRaw] =
-    await Promise.all([
-      tripOptionRepository.enabledIds(request.tripId, "accommodation"),
-      tripOptionRepository.enabledIds(request.tripId, "transportation"),
-      tripOptionRepository.enabledIds(request.tripId, "activity"),
-      tripOptionRepository.enabledIds(request.tripId, "meal"),
-      tripOptionRepository.enabledIds(request.tripId, "addon"),
-      request.accommodation
-        ? accommodationRepository.findDetail(request.accommodation.accommodationId, opts)
-        : Promise.resolve(null),
-      request.transportId
-        ? transportationRepository.findDetail(request.transportId, opts)
-        : Promise.resolve(null),
-      Promise.all(request.activityIds.map((id) => activityRepository.findDetail(id, opts))),
-      Promise.all(request.mealIds.map((id) => mealRepository.findDetail(id, opts))),
-      Promise.all(request.addonIds.map((id) => addonRepository.findDetail(id, opts))),
-    ]);
+  const [
+    accIds,
+    trIds,
+    actIds,
+    mealIds,
+    addonIds,
+    accommodation,
+    transport,
+    activitiesRaw,
+    mealsRaw,
+    addonsFetched,
+    overrides,
+  ] = await Promise.all([
+    tripOptionRepository.enabledIds(request.tripId, "accommodation"),
+    tripOptionRepository.enabledIds(request.tripId, "transportation"),
+    tripOptionRepository.enabledIds(request.tripId, "activity"),
+    tripOptionRepository.enabledIds(request.tripId, "meal"),
+    tripOptionRepository.enabledIds(request.tripId, "addon"),
+    request.accommodation
+      ? accommodationRepository.findDetail(request.accommodation.accommodationId, opts)
+      : Promise.resolve(null),
+    request.transportId
+      ? transportationRepository.findDetail(request.transportId, opts)
+      : Promise.resolve(null),
+    Promise.all(request.activityIds.map((id) => activityRepository.findDetail(id, opts))),
+    Promise.all(request.mealIds.map((id) => mealRepository.findDetail(id, opts))),
+    Promise.all(request.addonIds.map((id) => addonRepository.findDetail(id, opts))),
+    tripCustomizationRepository.priceOverrides(request.tripId),
+  ]);
+  const addonsRaw = addonsFetched.map((ad) =>
+    ad ? applyAddonOverrides(request.tripId, [ad], overrides)[0]! : ad,
+  );
 
   if (request.accommodation) {
     if (!accommodation) problems.push("Selected accommodation no longer exists.");
@@ -142,7 +198,8 @@ async function loadSelection(
   for (const a of activitiesRaw) {
     if (!a) problems.push("A selected activity no longer exists.");
     else if (!a.active) problems.push(`${a.name} is inactive.`);
-    else if (!actIds.has(a.id)) problems.push(`${a.name} is not an available option for this trip.`);
+    else if (!actIds.has(a.id))
+      problems.push(`${a.name} is not an available option for this trip.`);
     else activities.push(a);
   }
 
@@ -150,7 +207,8 @@ async function loadSelection(
   for (const m of mealsRaw) {
     if (!m) problems.push("A selected meal no longer exists.");
     else if (!m.active) problems.push(`${m.name} is inactive.`);
-    else if (!mealIds.has(m.id)) problems.push(`${m.name} is not an available option for this trip.`);
+    else if (!mealIds.has(m.id))
+      problems.push(`${m.name} is not an available option for this trip.`);
     else meals.push(m);
   }
 
@@ -158,11 +216,20 @@ async function loadSelection(
   for (const ad of addonsRaw) {
     if (!ad) problems.push("A selected add-on no longer exists.");
     else if (!ad.active) problems.push(`${ad.name} is inactive.`);
-    else if (!addonIds.has(ad.id)) problems.push(`${ad.name} is not an available option for this trip.`);
+    else if (!addonIds.has(ad.id))
+      problems.push(`${ad.name} is not an available option for this trip.`);
     else addons.push(ad);
   }
 
-  return { trip, accommodation: accommodation ?? null, transport: transport ?? null, activities, meals, addons, problems };
+  return {
+    trip,
+    accommodation: accommodation ?? null,
+    transport: transport ?? null,
+    activities,
+    meals,
+    addons,
+    problems,
+  };
 }
 
 /** Deterministically price + generate the itinerary. Does NOT persist. */
@@ -175,11 +242,22 @@ export async function calculate(
   if (!loaded) return { ...empty, problems: ["Trip not found."] };
 
   const { trip } = loaded;
+  // A catalogue placeholder whose duration is not decided yet cannot be priced:
+  // nights/days drive per-night and per-day quantities. Block rather than
+  // assume a length (§ "never invent a value").
+  if (trip.durationDays == null || trip.durationNights == null) {
+    return {
+      ...empty,
+      problems: ["This trip's duration is not configured yet — set it before quoting."],
+    };
+  }
+  const durationDays = trip.durationDays;
+  const durationNights = trip.durationNights;
   const travelDate = request.travelStartDate ? new Date(request.travelStartDate) : undefined;
 
   const resolved = resolveConfiguration({
-    durationDays: trip.durationDays,
-    durationNights: trip.durationNights,
+    durationDays,
+    durationNights,
     travellerCount: request.travellerCount,
     travelDate,
     accommodation: loaded.accommodation,
@@ -194,8 +272,8 @@ export async function calculate(
 
   const context: PricingContext = {
     travelStartDate: travelDate ?? EPOCH,
-    travelEndDate: travelDate ? addDays(travelDate, trip.durationDays - 1) : EPOCH,
-    nights: trip.durationNights,
+    travelEndDate: travelDate ? addDays(travelDate, durationDays - 1) : EPOCH,
+    nights: durationNights,
     travellerCount: request.travellerCount,
     baseInputs: resolved.lines,
     rules: [],
@@ -227,6 +305,8 @@ export async function calculate(
 
   const itinerary = generateItinerary({
     trip,
+    durationDays,
+    durationNights,
     customerName: request.customer.name || "Customer",
     travellerCount: request.travellerCount,
     occupancy: request.accommodation?.occupancy,

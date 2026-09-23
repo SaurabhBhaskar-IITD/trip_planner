@@ -62,8 +62,9 @@ export interface TripListItemDTO {
   slug: string;
   status: TripStatus;
   version: number;
-  durationDays: number;
-  durationNights: number;
+  /** null = duration not published yet (catalogue placeholder). */
+  durationDays: number | null;
+  durationNights: number | null;
   destinationNames: string[];
   updatedAt: Date;
 }
@@ -103,9 +104,14 @@ export interface TripDetailDTO {
   slug: string;
   summary: string | null;
   description: string | null;
-  durationDays: number;
-  durationNights: number;
+  /** Public grouping on trip-le.com (Himachal Pradesh, International, …). */
+  region: string | null;
+  /** null = duration not published yet; quoting is blocked until it is set. */
+  durationDays: number | null;
+  durationNights: number | null;
   status: TripStatus;
+  /** Planner owns this trip's public customizations on trip-le.com. */
+  publicOptionsEnabled: boolean;
   version: number;
   destinations: TripDestinationDTO[];
   itinerary: ItineraryDayDTO[];

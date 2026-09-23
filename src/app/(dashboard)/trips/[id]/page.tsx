@@ -13,9 +13,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { tripOptionRepository, tripRepository } from "@/server/repositories";
-import { formatDate } from "@/lib/utils/format";
+import {
+  itineraryDocumentRepository,
+  tripCustomizationRepository,
+  tripOptionRepository,
+  tripRepository,
+} from "@/server/repositories";
+import { formatDate, formatDuration } from "@/lib/utils/format";
+import { evaluateCustomization } from "@/domain/public-catalog/customization";
+import { isStorageConfigured } from "@/server/storage/itinerary-blob";
 import { TripOptionsEditor } from "./trip-options-editor";
+import { PublicationStatusCard } from "./publishing/publication-status-card";
+import { ItineraryDocumentCard } from "./publishing/itinerary-document-card";
+import { CustomizationsPanel } from "./publishing/customizations-panel";
+import type { CustomizationView } from "./publishing/types";
 
 export const metadata: Metadata = { title: "Trip detail" };
 
@@ -30,19 +41,71 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
   if (!trip) notFound();
 
   const canWrite = can(user, "trip:write");
+  const canPrice = can(user, "pricing:write");
   const daysCount = trip.itinerary.length;
   const segmentCount = trip.itinerary.reduce((n, d) => n + d.segments.length, 0);
 
   // Trip-specific options: which reusable master records THIS trip offers. Backed
   // by the trip↔catalogue join tables. The planner shows exactly these.
-  const [accCandidates, transportCandidates, activityCandidates, mealCandidates, addonCandidates] =
-    await Promise.all([
-      tripOptionRepository.listCandidates(id, "accommodation"),
-      tripOptionRepository.listCandidates(id, "transportation"),
-      tripOptionRepository.listCandidates(id, "activity"),
-      tripOptionRepository.listCandidates(id, "meal"),
-      tripOptionRepository.listCandidates(id, "addon"),
-    ]);
+  const [
+    accCandidates,
+    transportCandidates,
+    activityCandidates,
+    mealCandidates,
+    addonCandidates,
+    customizationRows,
+    documents,
+  ] = await Promise.all([
+    tripOptionRepository.listCandidates(id, "accommodation"),
+    tripOptionRepository.listCandidates(id, "transportation"),
+    tripOptionRepository.listCandidates(id, "activity"),
+    tripOptionRepository.listCandidates(id, "meal"),
+    tripOptionRepository.listCandidates(id, "addon"),
+    tripCustomizationRepository.listForTrip(id),
+    itineraryDocumentRepository.listForTrip(id),
+  ]);
+
+  // Evaluate sellability on the server with the SAME rule the public API uses,
+  // so the admin sees exactly what customers will (and won't) be offered.
+  const customizations: CustomizationView[] = customizationRows.map((r) => {
+    const verdict = evaluateCustomization({
+      active: true, // judge the option on its own merits; `active` is shown separately
+      masterActive: r.masterActive,
+      priceOverrideMinor: r.priceOverrideMinor,
+      priceOverrideUnit: r.priceOverrideUnit,
+      masterPrices: r.masterPrices,
+    });
+    return {
+      addonId: r.addonId,
+      name: r.name,
+      description: r.descriptionOverride ?? r.masterDescription,
+      descriptionOverride: r.descriptionOverride,
+      active: r.active,
+      masterActive: r.masterActive,
+      sortOrder: r.sortOrder,
+      isDefault: r.isDefault,
+      exclusiveGroup: r.exclusiveGroup,
+      priceOverrideMinor: r.priceOverrideMinor,
+      priceOverrideUnit: r.priceOverrideUnit,
+      sellable: verdict.sellable,
+      reason: verdict.sellable ? null : verdict.reason,
+      priceMinor: verdict.sellable ? verdict.priceMinor : null,
+      chargeBasis: verdict.sellable ? verdict.chargeBasis : null,
+      priceSource: verdict.sellable ? verdict.source : null,
+      updatedAt: r.updatedAt.toISOString(),
+    };
+  });
+  const attached = new Set(customizationRows.map((r) => r.addonId));
+  const availableAddons = addonCandidates
+    .filter((c) => !attached.has(c.id) && c.masterActive)
+    .map((c) => ({ id: c.id, name: c.name }));
+  const documentViews = documents.map((d) => ({
+    id: d.id,
+    version: d.version,
+    fileName: d.fileName,
+    sizeBytes: d.sizeBytes,
+    uploadedAt: d.uploadedAt.toISOString(),
+  }));
 
   return (
     <>
@@ -54,7 +117,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
             <StatusBadge status={trip.status} />
           </div>
           <p className="text-sm text-muted-foreground">
-            {trip.durationDays} Days / {trip.durationNights} Nights · v{trip.version} ·{" "}
+            {formatDuration(trip.durationDays, trip.durationNights, "long")} · v{trip.version} ·{" "}
             <span className="font-mono text-xs">/{trip.slug}</span>
           </p>
         </div>
@@ -76,9 +139,10 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="publishing">
         <div className="overflow-x-auto">
           <TabsList>
+            <TabsTrigger value="publishing">Publishing</TabsTrigger>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="destinations">Destinations</TabsTrigger>
             <TabsTrigger value="itinerary">Itinerary</TabsTrigger>
@@ -86,9 +150,38 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
             <TabsTrigger value="transport">Transport</TabsTrigger>
             <TabsTrigger value="activities">Activities</TabsTrigger>
             <TabsTrigger value="meals">Meals</TabsTrigger>
-            <TabsTrigger value="addons">Add-ons</TabsTrigger>
           </TabsList>
         </div>
+
+        {/* What trip-le.com shows: publication, the paid itinerary PDF, and the
+            customizations (this trip's add-ons) customers can buy. */}
+        <TabsContent value="publishing">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="space-y-6">
+              <PublicationStatusCard
+                tripId={trip.id}
+                status={trip.status}
+                publicOptionsEnabled={trip.publicOptionsEnabled}
+                canWrite={canWrite}
+              />
+              <ItineraryDocumentCard
+                tripId={trip.id}
+                documents={documentViews}
+                canWrite={canWrite}
+                storageConfigured={isStorageConfigured()}
+              />
+            </div>
+            <div className="lg:col-span-2">
+              <CustomizationsPanel
+                tripId={trip.id}
+                rows={customizations}
+                available={availableAddons}
+                canWrite={canWrite}
+                canPrice={canPrice}
+              />
+            </div>
+          </div>
+        </TabsContent>
 
         <TabsContent value="overview">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -109,7 +202,10 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <Row label="Status" value={<StatusBadge status={trip.status} />} />
-                <Row label="Duration" value={`${trip.durationDays}D / ${trip.durationNights}N`} />
+                <Row
+                  label="Duration"
+                  value={formatDuration(trip.durationDays, trip.durationNights)}
+                />
                 <Row label="Destinations" value={String(trip.destinations.length)} />
                 <Row label="Itinerary days" value={String(daysCount)} />
                 <Row label="Version" value={`v${trip.version}`} />
@@ -241,25 +337,18 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
         </TabsContent>
 
         <TabsContent value="meals">
-          <OptionTab title="Meal options" manageHref="/meals" manageLabel="Manage meals" canWrite={canWrite}>
+          <OptionTab
+            title="Meal options"
+            manageHref="/meals"
+            manageLabel="Manage meals"
+            canWrite={canWrite}
+          >
             <TripOptionsEditor
               tripId={trip.id}
               kind="meal"
               candidates={mealCandidates}
               canWrite={canWrite}
               emptyHint="No meals exist yet. Create some under Meals, then enable them here."
-            />
-          </OptionTab>
-        </TabsContent>
-
-        <TabsContent value="addons">
-          <OptionTab title="Add-on options" manageHref="/addons" manageLabel="Manage add-ons" canWrite={canWrite}>
-            <TripOptionsEditor
-              tripId={trip.id}
-              kind="addon"
-              candidates={addonCandidates}
-              canWrite={canWrite}
-              emptyHint="No add-ons exist yet. Create some under Add-ons, then enable them here."
             />
           </OptionTab>
         </TabsContent>

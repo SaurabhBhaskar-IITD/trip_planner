@@ -22,8 +22,12 @@ if (secret) {
 
 export async function middleware(request: NextRequest) {
   if (!authMiddleware) {
-    const isHealthCheck = request.nextUrl.pathname === "/api/health";
-    if (isHealthCheck) return NextResponse.next();
+    const path = request.nextUrl.pathname;
+    // Self-authenticating API surfaces stay reachable even when planner auth is
+    // unconfigured (they never depend on a planner session).
+    if (path === "/api/health" || path.startsWith("/api/public/") || path.startsWith("/api/internal/")) {
+      return NextResponse.next();
+    }
 
     const isLoginPage = request.nextUrl.pathname.startsWith("/login");
     if (isLoginPage) return NextResponse.next();
