@@ -57,6 +57,20 @@ export type MealType = (typeof MEAL_TYPES)[number];
 export const MEAL_PLANS = ["EP", "CP", "MAP", "AP", "custom"] as const;
 export type MealPlan = (typeof MEAL_PLANS)[number];
 
+// --- Add-ons -------------------------------------------------------------
+/**
+ * Customization categories offered to customers. Deliberately only two for now;
+ * add-ons without a category stay internal. Extend (ACTIVITY, MEAL, VISA, …)
+ * here and in the Prisma enum together.
+ */
+export const ADDON_CATEGORIES = ["HOTEL_UPGRADE", "TRAVEL_UPGRADE"] as const;
+export type AddonCategory = (typeof ADDON_CATEGORIES)[number];
+
+export const ADDON_CATEGORY_LABEL: Record<AddonCategory, string> = {
+  HOTEL_UPGRADE: "Hotel upgrade",
+  TRAVEL_UPGRADE: "Travel upgrade",
+};
+
 // --- Pricing -------------------------------------------------------------
 /** How a price is multiplied out. Drives the deterministic pricing engine. */
 export const PRICING_UNITS = [

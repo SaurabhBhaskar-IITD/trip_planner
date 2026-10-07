@@ -1,5 +1,6 @@
 import type {
   AccommodationCategory,
+  AddonCategory,
   ActivityType,
   MealPlan,
   MealType,
@@ -112,6 +113,8 @@ export interface TripDetailDTO {
   status: TripStatus;
   /** Planner owns this trip's public customizations on trip-le.com. */
   publicOptionsEnabled: boolean;
+  /** Travellers per room in the base package (4 = quad, 2 = twin); null = unknown. */
+  baseRoomOccupancy: number | null;
   version: number;
   destinations: TripDestinationDTO[];
   itinerary: ItineraryDayDTO[];
@@ -259,17 +262,35 @@ export interface AddonListItemDTO {
   id: string;
   name: string;
   description: string | null;
+  /** HOTEL_UPGRADE / TRAVEL_UPGRADE; null = not offered to customers. */
+  category: AddonCategory | null;
   active: boolean;
   priceCount: number;
+  /** How many trips (packages) this add-on is attached to. */
+  tripCount: number;
   updatedAt: Date;
+}
+
+/** One package that uses an add-on (package mapping view). */
+export interface AddonTripUsageDTO {
+  tripId: string;
+  tripName: string;
+  tripSlug: string;
+  /** Active for that trip (offered to its customers when the trip is published). */
+  active: boolean;
+  priceOverrideMinor: number | null;
+  priceOverrideUnit: PricingUnit | null;
+  priceOnRequest: boolean;
 }
 
 export interface AddonDetailDTO {
   id: string;
   name: string;
   description: string | null;
+  category: AddonCategory | null;
   active: boolean;
   prices: PriceDTO[];
+  usage: AddonTripUsageDTO[];
   createdAt: Date;
   updatedAt: Date;
 }

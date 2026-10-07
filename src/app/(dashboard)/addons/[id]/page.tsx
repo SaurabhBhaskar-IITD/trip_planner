@@ -13,7 +13,9 @@ import { PricingDialog } from "@/components/common/pricing-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { addonRepository } from "@/server/repositories";
-import { formatDate } from "@/lib/utils/format";
+import { formatDate, formatMinorAsINR } from "@/lib/utils/format";
+import { Badge } from "@/components/ui/badge";
+import { ADDON_CATEGORY_LABEL } from "@/domain/shared/enums";
 import { AddonDialog } from "../addon-dialog";
 
 export const metadata: Metadata = { title: "Add-on detail" };
@@ -72,6 +74,11 @@ export default async function AddonDetailPage({ params }: { params: Promise<{ id
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Status" value={<ActiveBadge active={detail.active} />} />
+            <Row
+              label="Category"
+              value={detail.category ? ADDON_CATEGORY_LABEL[detail.category] : "None (not offered to customers)"}
+            />
+            <Row label="Packages" value={String(detail.usage.length)} />
             <Row label="Price rows" value={String(detail.prices.length)} />
             <Row label="Updated" value={formatDate(detail.updatedAt)} />
           </CardContent>
@@ -104,6 +111,40 @@ export default async function AddonDetailPage({ params }: { params: Promise<{ id
               canWrite={canWritePricing}
               canViewInternal={canViewInternal}
             />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-sm">Used by packages ({detail.usage.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {detail.usage.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Not attached to any package. Attach it from a trip&apos;s Publishing tab.
+              </p>
+            ) : (
+              <ul className="divide-y text-sm">
+                {detail.usage.map((u) => (
+                  <li key={u.tripId} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <Link href={`/trips/${u.tripId}`} className="font-medium hover:underline">
+                      {u.tripName}
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">{u.tripSlug}</span>
+                    </Link>
+                    <span className="flex items-center gap-2">
+                      <span className="tabular-nums text-muted-foreground">
+                        {u.priceOnRequest
+                          ? "Price on request"
+                          : u.priceOverrideMinor != null
+                            ? `${formatMinorAsINR(u.priceOverrideMinor)} · ${(u.priceOverrideUnit ?? "").replace(/_/g, " ")}`
+                            : "Catalogue price"}
+                      </span>
+                      <Badge variant={u.active ? "default" : "secondary"}>{u.active ? "Active" : "Disabled"}</Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
       </div>

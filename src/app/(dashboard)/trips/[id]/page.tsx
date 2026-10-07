@@ -20,13 +20,13 @@ import {
   tripRepository,
 } from "@/server/repositories";
 import { formatDate, formatDuration } from "@/lib/utils/format";
-import { evaluateCustomization } from "@/domain/public-catalog/customization";
+import { evaluateCustomization, marginMinor } from "@/domain/public-catalog/customization";
 import { isStorageConfigured } from "@/server/storage/itinerary-blob";
 import { TripOptionsEditor } from "./trip-options-editor";
 import { PublicationStatusCard } from "./publishing/publication-status-card";
 import { ItineraryDocumentCard } from "./publishing/itinerary-document-card";
 import { CustomizationsPanel } from "./publishing/customizations-panel";
-import type { CustomizationView } from "./publishing/types";
+import type { AddonChoice, CustomizationView } from "./publishing/types";
 
 export const metadata: Metadata = { title: "Trip detail" };
 
@@ -42,6 +42,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
 
   const canWrite = can(user, "trip:write");
   const canPrice = can(user, "pricing:write");
+  const canViewInternal = can(user, "pricing:viewInternal");
   const daysCount = trip.itinerary.length;
   const segmentCount = trip.itinerary.reduce((n, d) => n + d.segments.length, 0);
 
@@ -55,6 +56,7 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     addonCandidates,
     customizationRows,
     documents,
+    internalRows,
   ] = await Promise.all([
     tripOptionRepository.listCandidates(id, "accommodation"),
     tripOptionRepository.listCandidates(id, "transportation"),
@@ -63,7 +65,10 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
     tripOptionRepository.listCandidates(id, "addon"),
     tripCustomizationRepository.listForTrip(id),
     itineraryDocumentRepository.listForTrip(id),
+    // Supplier economics are never even loaded for users who may not see them.
+    canViewInternal ? tripCustomizationRepository.listInternalForTrip(id) : Promise.resolve([]),
   ]);
+  const internalById = new Map(internalRows.map((r) => [r.addonId, r]));
 
   // Evaluate sellability on the server with the SAME rule the public API uses,
   // so the admin sees exactly what customers will (and won't) be offered.
@@ -74,31 +79,52 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
       priceOverrideMinor: r.priceOverrideMinor,
       priceOverrideUnit: r.priceOverrideUnit,
       masterPrices: r.masterPrices,
+      priceOnRequest: r.priceOnRequest,
+      nights: trip.durationNights,
+      baseRoomOccupancy: trip.baseRoomOccupancy,
+      roomOccupancy: r.roomOccupancy,
     });
+    const priced = verdict.sellable && !verdict.onRequest ? verdict : null;
+    const internal = internalById.get(r.addonId);
     return {
       addonId: r.addonId,
       name: r.name,
       description: r.descriptionOverride ?? r.masterDescription,
       descriptionOverride: r.descriptionOverride,
+      category: r.category,
       active: r.active,
       masterActive: r.masterActive,
       sortOrder: r.sortOrder,
       isDefault: r.isDefault,
+      isRecommended: r.isRecommended,
+      priceOnRequest: r.priceOnRequest,
+      availabilityNote: r.availabilityNote,
+      roomOccupancy: r.roomOccupancy,
       exclusiveGroup: r.exclusiveGroup,
       priceOverrideMinor: r.priceOverrideMinor,
       priceOverrideUnit: r.priceOverrideUnit,
       sellable: verdict.sellable,
+      onRequest: verdict.sellable && verdict.onRequest,
       reason: verdict.sellable ? null : verdict.reason,
-      priceMinor: verdict.sellable ? verdict.priceMinor : null,
-      chargeBasis: verdict.sellable ? verdict.chargeBasis : null,
-      priceSource: verdict.sellable ? verdict.source : null,
+      priceMinor: priced ? priced.priceMinor : null,
+      chargeBasis: priced ? priced.chargeBasis : null,
+      priceSource: priced ? priced.source : null,
+      ...(canViewInternal && internal
+        ? {
+            internal: {
+              note: internal.note,
+              supplierCostOverrideMinor: internal.supplierCostOverrideMinor,
+              marginMinor: marginMinor(r.priceOverrideMinor, internal.supplierCostOverrideMinor),
+            },
+          }
+        : {}),
       updatedAt: r.updatedAt.toISOString(),
     };
   });
   const attached = new Set(customizationRows.map((r) => r.addonId));
   const availableAddons = addonCandidates
     .filter((c) => !attached.has(c.id) && c.masterActive)
-    .map((c) => ({ id: c.id, name: c.name }));
+    .map((c) => ({ id: c.id, name: c.name, category: (c.category as AddonChoice["category"]) ?? null }));
   const documentViews = documents.map((d) => ({
     id: d.id,
     version: d.version,
@@ -178,6 +204,9 @@ export default async function TripDetailPage({ params }: { params: Promise<{ id:
                 available={availableAddons}
                 canWrite={canWrite}
                 canPrice={canPrice}
+                canViewInternal={canViewInternal}
+                baseRoomOccupancy={trip.baseRoomOccupancy}
+                nights={trip.durationNights}
               />
             </div>
           </div>

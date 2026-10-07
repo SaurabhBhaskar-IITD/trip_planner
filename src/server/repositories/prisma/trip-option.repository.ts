@@ -159,8 +159,10 @@ export class PrismaTripOptionRepository implements TripOptionRepository {
         id: ad.id,
         name: ad.name,
         description: ad.description,
+        category: (ad.category as AddonDetailDTO["category"]) ?? null,
         active: ad.active,
         prices: ad.prices.map((p) => toPriceDTO(p, opts.includeInternal)),
+        usage: [],
         createdAt: ad.createdAt,
         updatedAt: ad.updatedAt,
       };
@@ -270,6 +272,7 @@ export class PrismaTripOptionRepository implements TripOptionRepository {
           id: ad.id,
           name: ad.name,
           subtitle: ad.description ?? undefined,
+          category: ad.category,
           masterActive: ad.active,
           enabled: enabled.has(ad.id),
           sortOrder: 0,

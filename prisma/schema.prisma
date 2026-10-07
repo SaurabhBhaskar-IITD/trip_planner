@@ -104,6 +104,15 @@ enum PricingUnit {
   percentage
 }
 
+// What KIND of customization an add-on is. Only these two are sold in the
+// customer customization flow for now; add-ons without a category (activities,
+// insurance, guides, …) stay in the catalogue but are not offered on trip-le.com.
+// Extend later (ACTIVITY, MEAL, VISA, …) without touching existing rows.
+enum AddonCategory {
+  HOTEL_UPGRADE
+  TRAVEL_UPGRADE
+}
+
 enum Season {
   peak
   shoulder
@@ -237,6 +246,10 @@ model Trip {
   // customers. Turn ON per trip, once its customizations are configured here.
   // ON + status `active` is what actually sells planner options online.
   publicOptionsEnabled Boolean @default(false)
+  // Travellers per room in the BASE package (4 = quad, 2 = twin). Room-based
+  // customization prices (per room, per room per night) count rooms with it.
+  // NULL = unknown: room-based prices are then not sellable online.
+  baseRoomOccupancy    Int?
   // Optimistic/versioning marker for the trip PRODUCT definition (not quotes).
   version        Int        @default(1)
   createdAt      DateTime   @default(now())
@@ -359,7 +372,23 @@ model TripAddonOption {
   sortOrder Int     @default(0)
   active    Boolean @default(true)
   isDefault Boolean @default(false)
+  // INTERNAL notes for the Trip Le team (supplier, terms, caveats). Never public.
   note      String?
+
+  // Highlighted to customers as the suggested upgrade.
+  isRecommended    Boolean @default(false)
+  // Offered, but priced per enquiry (supplier confirmation needed). Never
+  // purchasable online and never part of an online total.
+  priceOnRequest   Boolean @default(false)
+  // Customer-facing availability / seasonality note ("Oct–Mar only", "subject
+  // to availability on your dates").
+  availabilityNote String?
+  // When this option is chosen, rooms are counted at this many travellers per
+  // room (e.g. Double Sharing = 2). NULL = the trip's base occupancy.
+  roomOccupancy    Int?
+  // INTERNAL supplier cost for the trip-specific price (same unit). Admin-only;
+  // margin = trip price − this.
+  supplierCostOverrideMinor BigInt?
 
   // Trip-specific selling price. When set it REPLACES the master AddonPrice for
   // this trip (Airport Transfer can cost ₹1,500 on one trip and more on another).
@@ -667,6 +696,9 @@ model Addon {
   id          String   @id @default(cuid())
   name        String
   description String?
+  // NULL = uncategorised (legacy/generic add-ons) — never offered in the
+  // customer customization flow.
+  category    AddonCategory?
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -675,6 +707,7 @@ model Addon {
   tripOptions TripAddonOption[]
 
   @@index([active])
+  @@index([category])
   @@map("addons")
 }
 

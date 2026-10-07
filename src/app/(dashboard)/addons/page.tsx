@@ -12,6 +12,8 @@ import { SearchFilterBar } from "@/components/common/search-filter-bar";
 import { MasterDataTable, type Column } from "@/components/common/master-data-table";
 import { PaginationBar } from "@/components/common/pagination-bar";
 import { ActiveBadge } from "@/components/common/status-badge";
+import { Badge } from "@/components/ui/badge";
+import { ADDON_CATEGORIES, ADDON_CATEGORY_LABEL } from "@/domain/shared/enums";
 import { Button } from "@/components/ui/button";
 import { addonRepository, parseListQuery } from "@/server/repositories";
 import type { AddonListItemDTO } from "@/types/master-data";
@@ -32,7 +34,7 @@ export default async function AddonsPage({
   if (!env.isDatabaseConfigured) return <DatabaseUnavailable />;
 
   const sp = await searchParams;
-  const query = parseListQuery(sp);
+  const query = parseListQuery(sp, { filterKeys: ["category"] });
   const { items, total, page, pageSize, pageCount } = await addonRepository.list(query);
 
   const columns: Column<AddonListItemDTO>[] = [
@@ -46,6 +48,21 @@ export default async function AddonsPage({
           ) : null}
         </Link>
       ),
+    },
+    {
+      header: "Category",
+      cell: (a) =>
+        a.category ? (
+          <Badge variant="secondary">{ADDON_CATEGORY_LABEL[a.category]}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">Not offered to customers</span>
+        ),
+    },
+    {
+      header: "Packages",
+      headClassName: "text-right",
+      className: "text-right tabular-nums",
+      cell: (a) => a.tripCount,
     },
     {
       header: "Prices",
@@ -76,7 +93,7 @@ export default async function AddonsPage({
     <>
       <PageHeader
         title="Add-ons"
-        description="Optional extras — transfers, upgrades, guides, insurance — with flexible pricing."
+        description="Optional extras. Only Hotel and Travel upgrades are offered in the trip-le.com customization flow; uncategorised add-ons stay internal."
         actions={newButton}
       />
 
@@ -85,6 +102,16 @@ export default async function AddonsPage({
         statusOptions={[
           { value: "active", label: "Active" },
           { value: "inactive", label: "Inactive" },
+        ]}
+        filters={[
+          {
+            param: "category",
+            allLabel: "All categories",
+            options: [
+              ...ADDON_CATEGORIES.map((c) => ({ value: c, label: ADDON_CATEGORY_LABEL[c] })),
+              { value: "none", label: "Not offered to customers" },
+            ],
+          },
         ]}
       />
 
@@ -95,7 +122,7 @@ export default async function AddonsPage({
         empty={
           <EmptyState
             icon={PackagePlus}
-            title={query.q || query.status ? "No matching add-ons" : "No add-ons yet"}
+            title={query.q || query.status || query.filters.category ? "No matching add-ons" : "No add-ons yet"}
             description={
               query.q || query.status
                 ? "Try adjusting your search or filter."

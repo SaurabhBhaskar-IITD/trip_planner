@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
+import type { AddonCategory, PricingUnit } from "@/domain/shared/enums";
 import type { AddonDetailDTO, AddonListItemDTO, Paginated } from "@/types/master-data";
 import type { AddonInput } from "@/lib/validation/addon.schema";
 import type { AddonRepository, PriceReadOptions } from "../ports/catalogue.repositories";
@@ -8,7 +9,7 @@ import { pageCount, paginationArgs, type ListQuery } from "../query";
 import { toPriceDTO } from "./price-mapper";
 
 const listInclude = {
-  _count: { select: { prices: true } },
+  _count: { select: { prices: true, tripOptions: true } },
 } satisfies Prisma.AddonInclude;
 
 type ListRow = Prisma.AddonGetPayload<{ include: typeof listInclude }>;
@@ -18,21 +19,51 @@ function toListItem(row: ListRow): AddonListItemDTO {
     id: row.id,
     name: row.name,
     description: row.description,
+    category: (row.category as AddonCategory | null) ?? null,
     active: row.active,
     priceCount: row._count.prices,
+    tripCount: row._count.tripOptions,
     updatedAt: row.updatedAt,
   };
 }
 
-type DetailRow = Prisma.AddonGetPayload<{ include: { prices: true } }>;
+const detailInclude = {
+  prices: { orderBy: [{ active: "desc" }, { season: "asc" }] },
+  // Package mapping. Customer-facing price fields only — supplier cost and
+  // internal notes are managed per trip on the trip's Publishing tab.
+  tripOptions: {
+    select: {
+      active: true,
+      priceOverrideMinor: true,
+      priceOverrideUnit: true,
+      priceOnRequest: true,
+      trip: { select: { id: true, name: true, slug: true } },
+    },
+    orderBy: { trip: { name: "asc" } },
+  },
+} satisfies Prisma.AddonInclude;
 
-function toDetail(row: DetailRow, includeInternal: boolean): AddonDetailDTO {
+type DetailRow = Prisma.AddonGetPayload<{ include: typeof detailInclude }>;
+type PricesRow = Prisma.AddonGetPayload<{ include: { prices: true } }>;
+
+function toDetail(row: DetailRow | PricesRow, includeInternal: boolean): AddonDetailDTO {
+  const usage = "tripOptions" in row ? row.tripOptions : [];
   return {
     id: row.id,
     name: row.name,
     description: row.description,
+    category: (row.category as AddonCategory | null) ?? null,
     active: row.active,
     prices: row.prices.map((p) => toPriceDTO(p, includeInternal)),
+    usage: usage.map((u) => ({
+      tripId: u.trip.id,
+      tripName: u.trip.name,
+      tripSlug: u.trip.slug,
+      active: u.active,
+      priceOverrideMinor: u.priceOverrideMinor == null ? null : Number(u.priceOverrideMinor),
+      priceOverrideUnit: (u.priceOverrideUnit as PricingUnit | null) ?? null,
+      priceOnRequest: u.priceOnRequest,
+    })),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -44,6 +75,9 @@ export class PrismaAddonRepository implements AddonRepository {
     if (query.q) where.name = { contains: query.q, mode: "insensitive" };
     if (query.status === "active") where.active = true;
     else if (query.status === "inactive") where.active = false;
+    const category = query.filters?.category;
+    if (category === "HOTEL_UPGRADE" || category === "TRAVEL_UPGRADE") where.category = category;
+    else if (category === "none") where.category = null;
 
     const [rows, total] = await Promise.all([
       prisma.addon.findMany({
@@ -65,10 +99,7 @@ export class PrismaAddonRepository implements AddonRepository {
   }
 
   async findDetail(id: string, opts: PriceReadOptions): Promise<AddonDetailDTO | null> {
-    const row = await prisma.addon.findUnique({
-      where: { id },
-      include: { prices: { orderBy: [{ active: "desc" }, { season: "asc" }] } },
-    });
+    const row = await prisma.addon.findUnique({ where: { id }, include: detailInclude });
     return row ? toDetail(row, opts.includeInternal) : null;
   }
 
@@ -86,6 +117,7 @@ export class PrismaAddonRepository implements AddonRepository {
       data: {
         name: input.name,
         description: input.description || null,
+        category: input.category,
         active: input.active,
       },
       select: { id: true },
@@ -98,6 +130,7 @@ export class PrismaAddonRepository implements AddonRepository {
       data: {
         name: input.name,
         description: input.description || null,
+        category: input.category,
         active: input.active,
       },
     });

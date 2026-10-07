@@ -44,6 +44,7 @@ function toDetailDTO(row: DetailRow): TripDetailDTO {
     durationNights: row.durationNights,
     status: row.status as TripStatus,
     publicOptionsEnabled: row.publicOptionsEnabled,
+    baseRoomOccupancy: row.baseRoomOccupancy,
     version: row.version,
     destinations: row.destinations.map((td) => ({
       destinationId: td.destinationId,
@@ -211,6 +212,17 @@ export class PrismaTripRepository implements TripRepository {
     await prisma.trip.update({
       where: { id },
       data: { publicOptionsEnabled: enabled, updatedById: updatedById ?? null },
+    });
+  }
+
+  async setBaseRoomOccupancy(
+    id: string,
+    occupancy: number | null,
+    updatedById?: string | null,
+  ): Promise<void> {
+    await prisma.trip.update({
+      where: { id },
+      data: { baseRoomOccupancy: occupancy, updatedById: updatedById ?? null },
     });
   }
 

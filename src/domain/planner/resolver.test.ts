@@ -92,8 +92,10 @@ function addon(prices: PriceDTO[]): AddonDetailDTO {
     id: "ad1",
     name: "Airport Transfer",
     description: null,
+    category: "TRAVEL_UPGRADE",
     active: true,
     prices,
+    usage: [],
     createdAt: now,
     updatedAt: now,
   };

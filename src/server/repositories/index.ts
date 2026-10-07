@@ -26,6 +26,7 @@ export type {
 export type {
   TripCustomizationRepository,
   CustomizationRowDTO,
+  CustomizationInternalDTO,
   CustomizationPatch,
   PublicTripRecord,
 } from "./ports/trip-customization.repository";

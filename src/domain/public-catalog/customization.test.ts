@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { PriceDTO } from "@/types/master-data";
 import {
+  chargeQuantity,
   customizationTotalMinor,
   evaluateCustomization,
+  marginMinor,
   type CustomizationInput,
 } from "./customization";
 
@@ -37,6 +39,7 @@ describe("evaluateCustomization — what may be sold online", () => {
     const r = evaluateCustomization(input());
     expect(r).toEqual({
       sellable: true,
+      onRequest: false,
       priceMinor: 150_000,
       unit: "per_person",
       chargeBasis: "per_person",
@@ -72,11 +75,41 @@ describe("evaluateCustomization — what may be sold online", () => {
     expect(r).toMatchObject({ sellable: false, reason: expect.stringMatching(/ambiguous/i) });
   });
 
-  it("withholds allocation-dependent units the website cannot compute", () => {
-    for (const unit of ["per_room", "per_room_per_night", "per_vehicle", "per_night", "percentage"] as const) {
+  it("withholds room/night units when the trip lacks occupancy or nights, and allocation units always", () => {
+    for (const unit of ["per_room", "per_room_per_night", "per_vehicle", "per_night", "percentage", "per_day"] as const) {
       const r = evaluateCustomization(input({ masterPrices: [price({ unit })] }));
       expect(r.sellable, unit).toBe(false);
     }
+  });
+
+  it("sells night- and room-based units once the trip supplies nights and occupancy", () => {
+    const ctx = { nights: 3, baseRoomOccupancy: 4 };
+    const cases = [
+      ["per_person_per_night", "per_person_per_night"],
+      ["per_room", "per_room"],
+      ["per_room_per_night", "per_room_per_night"],
+      ["per_night", "per_night"],
+    ] as const;
+    for (const [unit, basis] of cases) {
+      const r = evaluateCustomization(input({ ...ctx, masterPrices: [price({ unit })] }));
+      expect(r, unit).toMatchObject({ sellable: true, chargeBasis: basis });
+    }
+  });
+
+  it("accepts an option's own room occupancy when the trip has none", () => {
+    const r = evaluateCustomization(
+      input({ nights: 2, roomOccupancy: 2, priceOverrideMinor: 100_000, priceOverrideUnit: "per_room_per_night" }),
+    );
+    expect(r).toMatchObject({ sellable: true, chargeBasis: "per_room_per_night" });
+  });
+
+  it("offers price-on-request options for enquiry only, without needing a price", () => {
+    const r = evaluateCustomization(input({ priceOnRequest: true, masterPrices: [] }));
+    expect(r).toEqual({ sellable: true, onRequest: true });
+  });
+
+  it("still withholds a price-on-request option that is deactivated", () => {
+    expect(evaluateCustomization(input({ priceOnRequest: true, active: false })).sellable).toBe(false);
   });
 
   it("maps flat units to a per-booking charge", () => {
@@ -104,5 +137,37 @@ describe("customizationTotalMinor — integer paise arithmetic", () => {
   it("treats nonsense traveller counts as one traveller, never zero", () => {
     expect(customizationTotalMinor(150_000, "per_person", 0)).toBe(150_000);
     expect(customizationTotalMinor(150_000, "per_person", Number.NaN)).toBe(150_000);
+  });
+
+  it("multiplies per-person-per-night by travellers and nights", () => {
+    expect(customizationTotalMinor(50_000, "per_person_per_night", 4, { nights: 3 })).toBe(600_000);
+  });
+
+  it("counts whole rooms for room-based bases", () => {
+    // 5 travellers in quad rooms = 2 rooms; 2 nights.
+    expect(chargeQuantity("per_room_per_night", { travellers: 5, nights: 2, roomOccupancy: 4 })).toBe(4);
+    expect(chargeQuantity("per_room", { travellers: 4, roomOccupancy: 2 })).toBe(2);
+    expect(chargeQuantity("per_room", { travellers: 1, roomOccupancy: 2 })).toBe(1);
+  });
+
+  it("charges per-night bases by nights only", () => {
+    expect(chargeQuantity("per_night", { travellers: 6, nights: 4 })).toBe(4);
+  });
+
+  it("reproduces the brief's worked example (4 travellers)", () => {
+    const base = 599_900 * 4;
+    const hotel = customizationTotalMinor(150_000, "per_person", 4);
+    const travel = customizationTotalMinor(300_000, "per_booking", 4);
+    expect(base + hotel + travel).toBe(3_299_600);
+  });
+});
+
+describe("marginMinor — admin-only economics", () => {
+  it("is selling price minus supplier cost", () => {
+    expect(marginMinor(250_000, 180_000)).toBe(70_000);
+  });
+  it("is unknown when either side is missing", () => {
+    expect(marginMinor(250_000, null)).toBeNull();
+    expect(marginMinor(null, 1)).toBeNull();
   });
 });

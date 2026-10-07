@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import type { AddonDetailDTO } from "@/types/master-data";
@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ADDON_CATEGORIES, ADDON_CATEGORY_LABEL } from "@/domain/shared/enums";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { DialogClose } from "@/components/ui/dialog";
@@ -24,6 +26,7 @@ export function AddonForm({
   onDone: () => void;
 }) {
   const router = useRouter();
+  const [category, setCategory] = useState<string>(addon?.category ?? "__none__");
   const action = addon ? updateAddonAction.bind(null, addon.id) : createAddonAction;
   const [state, formAction] = useActionState<ActionResult<{ id: string }> | null, FormData>(
     action,
@@ -67,6 +70,24 @@ export function AddonForm({
           placeholder="Short internal description (optional)"
           rows={3}
         />
+      </FormField>
+
+      <FormField label="Category" htmlFor="category" error={fieldErrors?.category?.[0]}>
+        {/* Radix Select needs non-empty values: "__none__" = no category. */}
+        <input type="hidden" name="category" value={category} />
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger id="category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None — not offered to customers</SelectItem>
+            {ADDON_CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>
+                {ADDON_CATEGORY_LABEL[c]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </FormField>
 
       <div className="flex items-center gap-2">

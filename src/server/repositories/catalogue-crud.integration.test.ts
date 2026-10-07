@@ -167,7 +167,7 @@ describe.skipIf(!TEST_DB)("module CRUD + shared pricing (integration)", () => {
       });
       expect((await meal.findDetail(m.id, { includeInternal: true }))?.prices.length).toBe(1);
 
-      const ad = await addon.create({ name: "ZZ-CRUD Guide", description: "x", active: true });
+      const ad = await addon.create({ name: "ZZ-CRUD Guide", description: "x", category: null, active: true });
       ids.addon = ad.id;
       await pricing.create("addon", ad.id, {
         amountMinor: 200000,

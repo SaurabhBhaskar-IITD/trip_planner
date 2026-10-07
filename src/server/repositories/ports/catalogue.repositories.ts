@@ -63,6 +63,8 @@ export interface TripRepository {
   setStatus(id: string, status: TripStatus, updatedById?: string | null): Promise<void>;
   /** Whether the planner owns this trip's public customizations on trip-le.com. */
   setPublicOptionsEnabled(id: string, enabled: boolean, updatedById?: string | null): Promise<void>;
+  /** Travellers per room in the base package (room-based customization pricing). */
+  setBaseRoomOccupancy(id: string, occupancy: number | null, updatedById?: string | null): Promise<void>;
   duplicate(id: string, newSlug: string): Promise<{ id: string }>;
 
   // Itinerary management (ordered days + segments; ordering persisted in DB).

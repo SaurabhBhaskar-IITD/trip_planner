@@ -12,6 +12,7 @@ function trip(): TripDetailDTO {
     summary: null,
     description: null,
     publicOptionsEnabled: false,
+    baseRoomOccupancy: null,
     region: null,
     durationDays: 7,
     durationNights: 6,

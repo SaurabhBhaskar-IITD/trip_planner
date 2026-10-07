@@ -19,6 +19,8 @@ export interface OptionCandidateDTO {
   enabled: boolean;
   sortOrder: number;
   isDefault: boolean;
+  /** Add-ons only: HOTEL_UPGRADE / TRAVEL_UPGRADE, null when uncategorised. */
+  category?: string | null;
 }
 
 /**

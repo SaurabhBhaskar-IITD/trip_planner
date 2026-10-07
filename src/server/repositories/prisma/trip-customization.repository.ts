@@ -1,9 +1,10 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
-import type { PricingUnit, Season, TripStatus } from "@/domain/shared/enums";
+import type { AddonCategory, PricingUnit, Season, TripStatus } from "@/domain/shared/enums";
 import type { PriceDTO } from "@/types/master-data";
 import type {
+  CustomizationInternalDTO,
   CustomizationPatch,
   CustomizationRowDTO,
   PublicTripRecord,
@@ -11,14 +12,19 @@ import type {
 } from "../ports/trip-customization.repository";
 
 /**
- * Explicit allow-list of price columns. `supplierCostMinor` is deliberately NOT
- * selected: data that is never read can never leak to a public surface.
+ * Explicit allow-list of columns. `supplierCostMinor`, `supplierCostOverrideMinor`
+ * and the internal `note` are deliberately NOT selected: data that is never read
+ * can never leak to a public surface. Admins read them via `listInternalForTrip`.
  */
 const ROW_SELECT = Prisma.validator<Prisma.TripAddonOptionSelect>()({
   addonId: true,
   active: true,
   sortOrder: true,
   isDefault: true,
+  isRecommended: true,
+  priceOnRequest: true,
+  availabilityNote: true,
+  roomOccupancy: true,
   exclusiveGroup: true,
   descriptionOverride: true,
   priceOverrideMinor: true,
@@ -29,6 +35,7 @@ const ROW_SELECT = Prisma.validator<Prisma.TripAddonOptionSelect>()({
     select: {
       name: true,
       description: true,
+      category: true,
       active: true,
       prices: {
         select: {
@@ -78,13 +85,23 @@ interface RawRow {
   active: boolean;
   sortOrder: number;
   isDefault: boolean;
+  isRecommended: boolean;
+  priceOnRequest: boolean;
+  availabilityNote: string | null;
+  roomOccupancy: number | null;
   exclusiveGroup: string | null;
   descriptionOverride: string | null;
   priceOverrideMinor: bigint | null;
   priceOverrideUnit: string | null;
   updatedAt: Date;
   updatedById: string | null;
-  addon: { name: string; description: string | null; active: boolean; prices: RawPrice[] };
+  addon: {
+    name: string;
+    description: string | null;
+    category: string | null;
+    active: boolean;
+    prices: RawPrice[];
+  };
 }
 
 function toRow(r: RawRow): CustomizationRowDTO {
@@ -93,10 +110,15 @@ function toRow(r: RawRow): CustomizationRowDTO {
     name: r.addon.name,
     masterDescription: r.addon.description,
     descriptionOverride: r.descriptionOverride,
+    category: (r.addon.category as AddonCategory | null) ?? null,
     masterActive: r.addon.active,
     active: r.active,
     sortOrder: r.sortOrder,
     isDefault: r.isDefault,
+    isRecommended: r.isRecommended,
+    priceOnRequest: r.priceOnRequest,
+    availabilityNote: r.availabilityNote,
+    roomOccupancy: r.roomOccupancy,
     exclusiveGroup: r.exclusiveGroup,
     priceOverrideMinor: r.priceOverrideMinor == null ? null : Number(r.priceOverrideMinor),
     priceOverrideUnit: (r.priceOverrideUnit as PricingUnit | null) ?? null,
@@ -121,6 +143,18 @@ export class PrismaTripCustomizationRepository implements TripCustomizationRepos
     return rows.map(toRow);
   }
 
+  async listInternalForTrip(tripId: string): Promise<CustomizationInternalDTO[]> {
+    const rows = await prisma.tripAddonOption.findMany({
+      where: { tripId },
+      select: { addonId: true, note: true, supplierCostOverrideMinor: true },
+    });
+    return rows.map((r) => ({
+      addonId: r.addonId,
+      note: r.note,
+      supplierCostOverrideMinor: r.supplierCostOverrideMinor == null ? null : Number(r.supplierCostOverrideMinor),
+    }));
+  }
+
   async attach(tripId: string, addonId: string, userId: string | null): Promise<void> {
     await prisma.tripAddonOption.upsert({
       where: { tripId_addonId: { tripId, addonId } },
@@ -143,15 +177,24 @@ export class PrismaTripCustomizationRepository implements TripCustomizationRepos
     patch: CustomizationPatch,
     userId: string | null,
   ): Promise<void> {
-    const data: Record<string, unknown> = { updatedById: userId };
+    const data: Prisma.TripAddonOptionUncheckedUpdateInput = { updatedById: userId };
     if (patch.sortOrder !== undefined) data.sortOrder = patch.sortOrder;
     if (patch.isDefault !== undefined) data.isDefault = patch.isDefault;
+    if (patch.isRecommended !== undefined) data.isRecommended = patch.isRecommended;
+    if (patch.priceOnRequest !== undefined) data.priceOnRequest = patch.priceOnRequest;
+    if (patch.availabilityNote !== undefined) data.availabilityNote = patch.availabilityNote;
+    if (patch.roomOccupancy !== undefined) data.roomOccupancy = patch.roomOccupancy;
     if (patch.exclusiveGroup !== undefined) data.exclusiveGroup = patch.exclusiveGroup;
     if (patch.descriptionOverride !== undefined) data.descriptionOverride = patch.descriptionOverride;
+    if (patch.note !== undefined) data.note = patch.note;
     if (patch.priceOverride !== undefined) {
       data.priceOverrideMinor =
         patch.priceOverride === null ? null : BigInt(patch.priceOverride.amountMinor);
       data.priceOverrideUnit = patch.priceOverride === null ? null : patch.priceOverride.unit;
+    }
+    if (patch.supplierCostOverrideMinor !== undefined) {
+      data.supplierCostOverrideMinor =
+        patch.supplierCostOverrideMinor === null ? null : BigInt(patch.supplierCostOverrideMinor);
     }
     await prisma.tripAddonOption.update({
       where: { tripId_addonId: { tripId, addonId } },
@@ -169,6 +212,7 @@ export class PrismaTripCustomizationRepository implements TripCustomizationRepos
         name: true,
         durationDays: true,
         durationNights: true,
+        baseRoomOccupancy: true,
         status: true,
         publicOptionsEnabled: true,
         addonOptions: { where: { active: true }, orderBy: ORDER, select: ROW_SELECT },
@@ -181,6 +225,7 @@ export class PrismaTripCustomizationRepository implements TripCustomizationRepos
       name: trip.name,
       durationDays: trip.durationDays,
       durationNights: trip.durationNights,
+      baseRoomOccupancy: trip.baseRoomOccupancy,
       status: trip.status as TripStatus,
       publicOptionsEnabled: trip.publicOptionsEnabled,
       customizations: trip.addonOptions.map(toRow),

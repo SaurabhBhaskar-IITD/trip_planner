@@ -28,10 +28,14 @@ import { normalizePrismaError } from "./prisma-error";
  * that one trip.
  */
 
-async function tripSlug(tripId: string): Promise<string> {
+async function loadTrip(tripId: string) {
   const trip = await tripRepository.findDetail(tripId);
   if (!trip) throw new ValidationError("Trip not found.");
-  return trip.slug;
+  return trip;
+}
+
+async function tripSlug(tripId: string): Promise<string> {
+  return (await loadTrip(tripId)).slug;
 }
 
 function refresh(tripId: string) {
@@ -56,6 +60,30 @@ export async function setPublicOptionsEnabledAction(
     await tripRepository.setPublicOptionsEnabled(tripId, enabled, user.id);
     refresh(tripId);
     // Either direction changes what customers see, so invalidate immediately.
+    return actionOk({ notify: await notifyPublicSite(slug) });
+  } catch (error) {
+    return actionFail(normalizePrismaError(error));
+  }
+}
+
+/**
+ * Travellers per room in the trip's BASE package (4 = quad, 2 = twin). Room-based
+ * customization prices are multiplied by whole rooms counted with it; `null`
+ * makes room-based options unsellable online.
+ */
+export async function setBaseRoomOccupancyAction(
+  tripId: string,
+  occupancy: number | null,
+): Promise<ActionResult<{ notify: NotifyResult }>> {
+  try {
+    const user = await requirePermission("trip:write");
+    await requirePermission("pricing:write");
+    if (occupancy !== null && (!Number.isInteger(occupancy) || occupancy < 1 || occupancy > 12)) {
+      return actionFail(new ValidationError("Room occupancy must be a whole number from 1 to 12."));
+    }
+    const slug = await tripSlug(tripId);
+    await tripRepository.setBaseRoomOccupancy(tripId, occupancy, user.id);
+    refresh(tripId);
     return actionOk({ notify: await notifyPublicSite(slug) });
   } catch (error) {
     return actionFail(normalizePrismaError(error));
@@ -91,7 +119,8 @@ export async function setCustomizationActiveAction(
 ): Promise<ActionResult<{ notify: NotifyResult }>> {
   try {
     const user = await requirePermission("trip:write");
-    const slug = await tripSlug(tripId);
+    const trip = await loadTrip(tripId);
+    const slug = trip.slug;
 
     if (active) {
       const row = (await tripCustomizationRepository.listForTrip(tripId)).find((r) => r.addonId === addonId);
@@ -102,6 +131,10 @@ export async function setCustomizationActiveAction(
         priceOverrideMinor: row.priceOverrideMinor,
         priceOverrideUnit: row.priceOverrideUnit,
         masterPrices: row.masterPrices,
+        priceOnRequest: row.priceOnRequest,
+        nights: trip.durationNights,
+        baseRoomOccupancy: trip.baseRoomOccupancy,
+        roomOccupancy: row.roomOccupancy,
       });
       if (!verdict.sellable) {
         return actionFail(new ValidationError(`Cannot activate "${row.name}": ${verdict.reason}`));
@@ -130,11 +163,27 @@ export async function updateCustomizationAction(
         new ValidationError(parsed.error.issues[0]?.message ?? "Invalid customization.", parsed.error.flatten().fieldErrors),
       );
     }
+    const { supplierCostRupees, ...rest } = parsed.data;
     // Changing what customers pay is a PRICING change, not just trip editing.
-    if (parsed.data.priceOverride !== undefined) await requirePermission("pricing:write");
+    if (rest.priceOverride !== undefined || rest.priceOnRequest !== undefined) {
+      await requirePermission("pricing:write");
+    }
+    // Supplier economics are visible/editable only to those who may see them.
+    if (supplierCostRupees !== undefined) {
+      await requirePermission("pricing:write");
+      await requirePermission("pricing:viewInternal");
+    }
 
     const slug = await tripSlug(tripId);
-    await tripCustomizationRepository.update(tripId, addonId, parsed.data, user.id);
+    await tripCustomizationRepository.update(
+      tripId,
+      addonId,
+      {
+        ...rest,
+        ...(supplierCostRupees !== undefined ? { supplierCostOverrideMinor: supplierCostRupees } : {}),
+      },
+      user.id,
+    );
     refresh(tripId);
     return actionOk({ notify: await notifyPublicSite(slug) });
   } catch (error) {

@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "import:trips": "tsx prisma/scripts/import-public-trips.ts",
-    "import:catalogue": "tsx prisma/scripts/import-public-catalogue.ts"
+    "import:catalogue": "tsx prisma/scripts/import-public-catalogue.ts",
+    "seed:addons": "tsx prisma/scripts/seed-upgrade-addons.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
